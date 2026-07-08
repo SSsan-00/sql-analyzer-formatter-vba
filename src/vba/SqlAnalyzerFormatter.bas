@@ -74,16 +74,23 @@ Public Sub AnalyzeQueries(Optional ByVal showMessage As Boolean = True)
     End If
 End Sub
 
-' 確認後、各シートの2行目以降をクリア
+' 確認後、各シートの2行目以降をクリアしてヘッダーを復元
 Public Sub ClearData(Optional ByVal showMessage As Boolean = True)
+    Dim wsRef As Worksheet
+    Dim wsSql As Worksheet
+
     If showMessage Then
         If MsgBox(ClearConfirmMessage(), vbQuestion + vbYesNo + vbDefaultButton2, ConfirmTitle()) <> vbYes Then
             Exit Sub
         End If
     End If
 
-    ClearRowsBelowHeader GetReferenceSheet(), COL_FIELD_NAME
-    ClearRowsBelowHeader GetSqlSheet(), COL_REPLACEMENT
+    Set wsRef = GetReferenceSheet()
+    Set wsSql = GetSqlSheet()
+
+    ClearRowsBelowHeader wsRef, COL_FIELD_NAME
+    ClearRowsBelowHeader wsSql, COL_REPLACEMENT
+    RestoreHeaders wsRef, wsSql
     If showMessage Then
         MsgBox ClearDoneMessage(), vbInformation
     End If
@@ -357,6 +364,8 @@ End Function
 
 ' 変換定義シートの見出しと列幅を設定
 Private Sub ApplyReferenceHeader(ByVal ws As Worksheet)
+    ws.Range("A1:D1").UnMerge
+    ws.Range("A1:D1").ClearContents
     ws.Cells(1, COL_TABLE_ID).Value = TableIdHeader()
     ws.Cells(1, COL_TABLE_NAME).Value = TableNameHeader()
     ws.Cells(1, COL_FIELD_ID).Value = FieldIdHeader()
@@ -367,6 +376,8 @@ End Sub
 
 ' SQL解析シートの見出しと列幅を設定
 Private Sub ApplySqlHeader(ByVal ws As Worksheet)
+    ws.Range("A1:Z1").UnMerge
+    ws.Range("A1:Z1").ClearContents
     ws.Cells(1, COL_SQL).Value = SqlHeader()
     ws.Cells(1, COL_RESULT).Value = ResultHeader()
     ws.Cells(1, COL_REPLACEMENT).Value = ReplacementHeader()
@@ -374,6 +385,12 @@ Private Sub ApplySqlHeader(ByVal ws As Worksheet)
     ws.Rows(1).RowHeight = 30
     ws.Columns("A:B").ColumnWidth = 42
     ws.Columns("C:Z").ColumnWidth = 24
+End Sub
+
+' 変換定義シートとSQL解析シートのヘッダーを既定値に復元
+Private Sub RestoreHeaders(ByVal wsRef As Worksheet, ByVal wsSql As Worksheet)
+    ApplyReferenceHeader wsRef
+    ApplySqlHeader wsSql
 End Sub
 
 ' SQL解析シートへ解析ボタンとクリアボタンを配置
