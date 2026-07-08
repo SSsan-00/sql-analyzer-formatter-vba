@@ -31,11 +31,10 @@ Public Sub AnalyzeQueries(Optional ByVal showMessage As Boolean = True)
     Dim qualifiedMap As Object
     Dim tokenMap As Object
     Dim lastRow As Long
-    Dim clearLastRow As Long
     Dim rowNumber As Long
     Dim sourceText As String
     Dim convertedText As String
-    Dim details As String
+    Dim replacementValues As Object
 
     Set wsRef = GetReferenceSheet()
     Set wsSql = GetSqlSheet()
@@ -53,21 +52,16 @@ Public Sub AnalyzeQueries(Optional ByVal showMessage As Boolean = True)
     End If
 
     lastRow = LastUsedRowInColumn(wsSql, COL_SQL)
-    ' 前回の出力だけを消し、入力SQLは残す
-    clearLastRow = MaxLong(lastRow, LastUsedRowInColumn(wsSql, COL_REPLACEMENT))
-    If clearLastRow >= 2 Then
-        wsSql.Range(wsSql.Cells(2, COL_RESULT), wsSql.Cells(clearLastRow, COL_REPLACEMENT)).ClearContents
-    End If
+    ClearAnalyzeOutput wsSql, lastRow
 
     For rowNumber = 2 To lastRow
         sourceText = CStr(wsSql.Cells(rowNumber, COL_SQL).Value)
         If Len(sourceText) > 0 Then
-            details = vbNullString
-            convertedText = ApplyMappings(sourceText, qualifiedMap, tokenMap, details)
+            Set replacementValues = CreateObject("Scripting.Dictionary")
+            replacementValues.CompareMode = vbBinaryCompare
+            convertedText = ApplyMappings(sourceText, qualifiedMap, tokenMap, replacementValues)
             wsSql.Cells(rowNumber, COL_RESULT).Value = convertedText
-            If Len(details) > 0 Then
-                wsSql.Cells(rowNumber, COL_REPLACEMENT).Value = details
-            End If
+            WriteReplacementValues wsSql, rowNumber, replacementValues
         End If
     Next rowNumber
 
@@ -134,45 +128,38 @@ Private Sub LoadMappings(ByVal wsRef As Worksheet, ByVal qualifiedMap As Object,
     Next key
 End Sub
 
-Private Function ApplyMappings(ByVal sourceText As String, ByVal qualifiedMap As Object, ByVal tokenMap As Object, ByRef details As String) As String
+Private Function ApplyMappings(ByVal sourceText As String, ByVal qualifiedMap As Object, ByVal tokenMap As Object, ByVal replacementValues As Object) As String
     Dim resultText As String
-    Dim notes As Object
     Dim key As Variant
     Dim changeCount As Long
     Dim replacementText As String
+    Dim firstMatchIndex As Long
 
     resultText = sourceText
-    Set notes = CreateObject("Scripting.Dictionary")
-    notes.CompareMode = vbBinaryCompare
 
     ' 修飾付き識別子を先に処理し、単独IDとの重複置換を避ける
     For Each key In SortedKeysByLengthDesc(qualifiedMap)
         replacementText = CStr(qualifiedMap(CStr(key)))
         changeCount = 0
-        resultText = ReplaceIdentifier(resultText, CStr(key), replacementText, changeCount)
+        resultText = ReplaceIdentifier(resultText, CStr(key), replacementText, changeCount, firstMatchIndex)
         If changeCount > 0 Then
-            AddNote notes, CStr(key) & " -> " & replacementText
+            AddReplacementValue replacementValues, replacementText, firstMatchIndex
         End If
     Next key
 
     For Each key In SortedKeysByLengthDesc(tokenMap)
         replacementText = CStr(tokenMap(CStr(key)))
         changeCount = 0
-        resultText = ReplaceIdentifier(resultText, CStr(key), replacementText, changeCount)
+        resultText = ReplaceIdentifier(resultText, CStr(key), replacementText, changeCount, firstMatchIndex)
         If changeCount > 0 Then
-            AddNote notes, CStr(key) & " -> " & replacementText
+            AddReplacementValue replacementValues, replacementText, firstMatchIndex
         End If
     Next key
 
-    If notes.Count > 0 Then
-        details = Join(notes.Keys, "; ")
-    Else
-        details = vbNullString
-    End If
     ApplyMappings = resultText
 End Function
 
-Private Function ReplaceIdentifier(ByVal sourceText As String, ByVal searchText As String, ByVal replacementText As String, ByRef changeCount As Long) As String
+Private Function ReplaceIdentifier(ByVal sourceText As String, ByVal searchText As String, ByVal replacementText As String, ByRef changeCount As Long, ByRef firstMatchIndex As Long) As String
     Dim re As Object
     Dim matches As Object
     Dim matchItem As Object
@@ -189,6 +176,10 @@ Private Function ReplaceIdentifier(ByVal sourceText As String, ByVal searchText 
 
     Set matches = re.Execute(sourceText)
     changeCount = matches.Count
+    firstMatchIndex = -1
+    If changeCount > 0 Then
+        firstMatchIndex = matches.Item(0).FirstIndex
+    End If
     resultText = sourceText
 
     ' 後方から置換し、FirstIndexのずれを防ぐ
@@ -248,9 +239,39 @@ Private Function SortedKeysByLengthDesc(ByVal dictionary As Object) As Variant
     SortedKeysByLengthDesc = keys
 End Function
 
-Private Sub AddNote(ByVal notes As Object, ByVal noteText As String)
-    If Not notes.Exists(noteText) Then
-        notes(noteText) = True
+Private Function SortedKeysByValueAsc(ByVal dictionary As Object) As Variant
+    Dim keys As Variant
+    Dim outerIndex As Long
+    Dim innerIndex As Long
+    Dim tempValue As Variant
+
+    If dictionary.Count = 0 Then
+        SortedKeysByValueAsc = Array()
+        Exit Function
+    End If
+
+    keys = dictionary.Keys
+    For outerIndex = LBound(keys) To UBound(keys) - 1
+        For innerIndex = outerIndex + 1 To UBound(keys)
+            If CLng(dictionary(CStr(keys(innerIndex)))) < CLng(dictionary(CStr(keys(outerIndex)))) Then
+                tempValue = keys(outerIndex)
+                keys(outerIndex) = keys(innerIndex)
+                keys(innerIndex) = tempValue
+            End If
+        Next innerIndex
+    Next outerIndex
+
+    SortedKeysByValueAsc = keys
+End Function
+
+Private Sub AddReplacementValue(ByVal replacementValues As Object, ByVal replacementText As String, ByVal firstMatchIndex As Long)
+    ' 同じ変換後値は1行内で重複表示しない
+    If replacementValues.Exists(replacementText) Then
+        If firstMatchIndex >= 0 And CLng(replacementValues(replacementText)) > firstMatchIndex Then
+            replacementValues(replacementText) = firstMatchIndex
+        End If
+    Else
+        replacementValues(replacementText) = firstMatchIndex
     End If
 End Sub
 
@@ -322,8 +343,9 @@ Private Sub ApplySqlHeader(ByVal ws As Worksheet)
     ws.Cells(1, COL_RESULT).Value = ResultHeader()
     ws.Cells(1, COL_REPLACEMENT).Value = ReplacementHeader()
     ws.Rows(1).Font.Bold = True
-    ws.Columns("A:C").ColumnWidth = 42
-    ws.Columns("C").ColumnWidth = 50
+    ws.Rows(1).RowHeight = 30
+    ws.Columns("A:B").ColumnWidth = 42
+    ws.Columns("C:Z").ColumnWidth = 24
 End Sub
 
 Private Sub InstallButtons(ByVal ws As Worksheet)
@@ -335,7 +357,6 @@ Private Sub InstallButtons(ByVal ws As Worksheet)
     DeleteShapeIfExists ws, "btnAnalyzeQueries"
     DeleteShapeIfExists ws, "btnClearData"
 
-    ws.Columns("E:F").ColumnWidth = 12
     buttonTop = ws.Rows(1).Top + 2
     buttonLeft = ws.Columns("E").Left
 
@@ -358,6 +379,32 @@ Private Sub DeleteShapeIfExists(ByVal ws As Worksheet, ByVal shapeName As String
     On Error Resume Next
     ws.Shapes(shapeName).Delete
     On Error GoTo 0
+End Sub
+
+Private Sub ClearAnalyzeOutput(ByVal wsSql As Worksheet, ByVal lastInputRow As Long)
+    Dim clearLastRow As Long
+    Dim clearLastColumn As Long
+
+    ' 前回の出力だけを消し、入力SQLは残す
+    clearLastRow = MaxLong(lastInputRow, LastUsedRow(wsSql))
+    clearLastColumn = MaxLong(LastUsedColumn(wsSql), COL_REPLACEMENT)
+    If clearLastRow >= 2 Then
+        wsSql.Range(wsSql.Cells(2, COL_RESULT), wsSql.Cells(clearLastRow, clearLastColumn)).ClearContents
+    End If
+End Sub
+
+Private Sub WriteReplacementValues(ByVal wsSql As Worksheet, ByVal rowNumber As Long, ByVal replacementValues As Object)
+    Dim index As Long
+    Dim keys As Variant
+
+    If replacementValues.Count = 0 Then
+        Exit Sub
+    End If
+
+    keys = SortedKeysByValueAsc(replacementValues)
+    For index = LBound(keys) To UBound(keys)
+        wsSql.Cells(rowNumber, COL_REPLACEMENT + index).Value = CStr(keys(index))
+    Next index
 End Sub
 
 Private Sub ClearRowsBelowHeader(ByVal ws As Worksheet, ByVal minimumLastColumn As Long)
