@@ -21,8 +21,7 @@ Public Sub SetupWorkbook()
     Set wsRef = ResolveOrCreateSheet(ReferenceSheetName(), REF_LEGACY_SHEET, 1)
     Set wsSql = ResolveOrCreateSheet(SqlSheetName(), SQL_LEGACY_SHEET, 2)
 
-    ApplyReferenceHeader wsRef
-    ApplySqlHeader wsSql
+    RestoreHeaders wsRef, wsSql
     InstallButtons wsSql
 End Sub
 
@@ -40,10 +39,8 @@ Public Sub AnalyzeQueries(Optional ByVal showMessage As Boolean = True)
 
     Set wsRef = GetReferenceSheet()
     Set wsSql = GetSqlSheet()
-    Set qualifiedMap = CreateObject("Scripting.Dictionary")
-    Set tokenMap = CreateObject("Scripting.Dictionary")
-    qualifiedMap.CompareMode = vbBinaryCompare
-    tokenMap.CompareMode = vbBinaryCompare
+    Set qualifiedMap = CreateTextDictionary()
+    Set tokenMap = CreateTextDictionary()
 
     LoadMappings wsRef, qualifiedMap, tokenMap
     If qualifiedMap.Count = 0 And tokenMap.Count = 0 Then
@@ -59,8 +56,7 @@ Public Sub AnalyzeQueries(Optional ByVal showMessage As Boolean = True)
     For rowNumber = 2 To lastRow
         sourceText = CStr(wsSql.Cells(rowNumber, COL_SQL).Value)
         If Len(sourceText) > 0 Then
-            Set replacementValues = CreateObject("Scripting.Dictionary")
-            replacementValues.CompareMode = vbBinaryCompare
+            Set replacementValues = CreateTextDictionary()
             convertedText = ApplyMappings(sourceText, qualifiedMap, tokenMap, replacementValues)
             wsSql.Cells(rowNumber, COL_RESULT).Value = convertedText
             WriteReplacementValues wsSql, rowNumber, replacementValues
@@ -107,10 +103,8 @@ Private Sub LoadMappings(ByVal wsRef As Worksheet, ByVal qualifiedMap As Object,
     Dim fieldName As String
     Dim key As Variant
 
-    Set uniqueTokens = CreateObject("Scripting.Dictionary")
-    Set conflictTokens = CreateObject("Scripting.Dictionary")
-    uniqueTokens.CompareMode = vbBinaryCompare
-    conflictTokens.CompareMode = vbBinaryCompare
+    Set uniqueTokens = CreateTextDictionary()
+    Set conflictTokens = CreateTextDictionary()
 
     ' 単独フィールドIDは和名が一意に決まる場合だけ採用
     lastRow = LastUsedRow(wsRef)
@@ -146,34 +140,36 @@ End Sub
 ' 1行分のSQLへ変換表を適用し、変換後値を記録
 Private Function ApplyMappings(ByVal sourceText As String, ByVal qualifiedMap As Object, ByVal tokenMap As Object, ByVal replacementValues As Object) As String
     Dim resultText As String
+
+    resultText = sourceText
+
+    ' 修飾付き識別子を先に処理し、単独IDとの重複置換を避ける
+    resultText = ApplyMappingSet(resultText, qualifiedMap, replacementValues, False)
+    ' 単独IDはドット前後を除外し、テーブル修飾子を変換しない
+    resultText = ApplyMappingSet(resultText, tokenMap, replacementValues, True)
+
+    ApplyMappings = resultText
+End Function
+
+' 指定された変換表を1行分のSQLへ適用
+Private Function ApplyMappingSet(ByVal sourceText As String, ByVal mapping As Object, ByVal replacementValues As Object, ByVal excludeDotBoundary As Boolean) As String
+    Dim resultText As String
     Dim key As Variant
     Dim changeCount As Long
     Dim replacementText As String
     Dim firstMatchIndex As Long
 
     resultText = sourceText
-
-    ' 修飾付き識別子を先に処理し、単独IDとの重複置換を避ける
-    For Each key In SortedKeysByLengthDesc(qualifiedMap)
-        replacementText = CStr(qualifiedMap(CStr(key)))
+    For Each key In SortedKeysByLengthDesc(mapping)
+        replacementText = CStr(mapping(CStr(key)))
         changeCount = 0
-        resultText = ReplaceIdentifier(resultText, CStr(key), replacementText, changeCount, firstMatchIndex)
+        resultText = ReplaceIdentifier(resultText, CStr(key), replacementText, changeCount, firstMatchIndex, excludeDotBoundary)
         If changeCount > 0 Then
             AddReplacementValue replacementValues, replacementText, firstMatchIndex
         End If
     Next key
 
-    For Each key In SortedKeysByLengthDesc(tokenMap)
-        replacementText = CStr(tokenMap(CStr(key)))
-        changeCount = 0
-        ' 単独IDはドット前後を除外し、テーブル修飾子を変換しない
-        resultText = ReplaceIdentifier(resultText, CStr(key), replacementText, changeCount, firstMatchIndex, True)
-        If changeCount > 0 Then
-            AddReplacementValue replacementValues, replacementText, firstMatchIndex
-        End If
-    Next key
-
-    ApplyMappings = resultText
+    ApplyMappingSet = resultText
 End Function
 
 ' 識別子単位で文字列を置換し、置換数と初回位置を返却
@@ -362,10 +358,15 @@ Private Function TryGetWorksheet(ByVal sheetName As String) As Worksheet
     On Error GoTo 0
 End Function
 
+' 文字列キー用の辞書を作成
+Private Function CreateTextDictionary() As Object
+    Set CreateTextDictionary = CreateObject("Scripting.Dictionary")
+    CreateTextDictionary.CompareMode = vbBinaryCompare
+End Function
+
 ' 変換定義シートの見出しと列幅を設定
 Private Sub ApplyReferenceHeader(ByVal ws As Worksheet)
-    ws.Range("A1:D1").UnMerge
-    ws.Range("A1:D1").ClearContents
+    ResetHeaderRange ws.Range("A1:D1")
     ws.Cells(1, COL_TABLE_ID).Value = TableIdHeader()
     ws.Cells(1, COL_TABLE_NAME).Value = TableNameHeader()
     ws.Cells(1, COL_FIELD_ID).Value = FieldIdHeader()
@@ -376,8 +377,7 @@ End Sub
 
 ' SQL解析シートの見出しと列幅を設定
 Private Sub ApplySqlHeader(ByVal ws As Worksheet)
-    ws.Range("A1:Z1").UnMerge
-    ws.Range("A1:Z1").ClearContents
+    ResetHeaderRange ws.Range("A1:Z1")
     ws.Cells(1, COL_SQL).Value = SqlHeader()
     ws.Cells(1, COL_RESULT).Value = ResultHeader()
     ws.Cells(1, COL_REPLACEMENT).Value = ReplacementHeader()
@@ -385,6 +385,12 @@ Private Sub ApplySqlHeader(ByVal ws As Worksheet)
     ws.Rows(1).RowHeight = 30
     ws.Columns("A:B").ColumnWidth = 42
     ws.Columns("C:Z").ColumnWidth = 24
+End Sub
+
+' ヘッダー範囲の結合と内容を初期化
+Private Sub ResetHeaderRange(ByVal headerRange As Range)
+    headerRange.UnMerge
+    headerRange.ClearContents
 End Sub
 
 ' 変換定義シートとSQL解析シートのヘッダーを既定値に復元
