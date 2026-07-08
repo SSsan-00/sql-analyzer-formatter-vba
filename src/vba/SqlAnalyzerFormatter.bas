@@ -73,6 +73,12 @@ Public Sub AnalyzeQueries(Optional ByVal showMessage As Boolean = True)
 End Sub
 
 Public Sub ClearData(Optional ByVal showMessage As Boolean = True)
+    If showMessage Then
+        If MsgBox(ClearConfirmMessage(), vbQuestion + vbYesNo + vbDefaultButton2, ConfirmTitle()) <> vbYes Then
+            Exit Sub
+        End If
+    End If
+
     ClearRowsBelowHeader GetReferenceSheet(), COL_FIELD_NAME
     ClearRowsBelowHeader GetSqlSheet(), COL_REPLACEMENT
     If showMessage Then
@@ -523,6 +529,14 @@ End Function
 
 Private Function ClearDoneMessage() As String
     ClearDoneMessage = W(&H30AF, &H30EA, &H30A2, &H304C, &H5B8C, &H4E86, &H3057, &H307E, &H3057, &H305F, &H3002)
+End Function
+
+Private Function ClearConfirmMessage() As String
+    ClearConfirmMessage = W(&H0032, &H884C, &H76EE, &H4EE5, &H964D, &H3092, &H30AF, &H30EA, &H30A2, &H3057, &H307E, &H3059, &H3002, &H3088, &H308D, &H3057, &H3044, &H3067, &H3059, &H304B, &HFF1F)
+End Function
+
+Private Function ConfirmTitle() As String
+    ConfirmTitle = W(&H78BA, &H8A8D)
 End Function
 
 Private Function NoDefinitionMessage() As String
