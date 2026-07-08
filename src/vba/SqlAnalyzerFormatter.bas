@@ -13,6 +13,7 @@ Private Const COL_SQL As Long = 1
 Private Const COL_RESULT As Long = 2
 Private Const COL_REPLACEMENT As Long = 3
 
+' ブックのシート名、見出し、操作ボタンを初期化
 Public Sub SetupWorkbook()
     Dim wsRef As Worksheet
     Dim wsSql As Worksheet
@@ -25,6 +26,7 @@ Public Sub SetupWorkbook()
     InstallButtons wsSql
 End Sub
 
+' SQL解析シートのA列を変換し、B列以降へ結果を出力
 Public Sub AnalyzeQueries(Optional ByVal showMessage As Boolean = True)
     Dim wsRef As Worksheet
     Dim wsSql As Worksheet
@@ -72,6 +74,7 @@ Public Sub AnalyzeQueries(Optional ByVal showMessage As Boolean = True)
     End If
 End Sub
 
+' 確認後、各シートの2行目以降をクリア
 Public Sub ClearData(Optional ByVal showMessage As Boolean = True)
     If showMessage Then
         If MsgBox(ClearConfirmMessage(), vbQuestion + vbYesNo + vbDefaultButton2, ConfirmTitle()) <> vbYes Then
@@ -86,6 +89,7 @@ Public Sub ClearData(Optional ByVal showMessage As Boolean = True)
     End If
 End Sub
 
+' 変換定義シートから修飾付きIDと単独IDの変換表を作成
 Private Sub LoadMappings(ByVal wsRef As Worksheet, ByVal qualifiedMap As Object, ByVal tokenMap As Object)
     Dim uniqueTokens As Object
     Dim conflictTokens As Object
@@ -132,6 +136,7 @@ Private Sub LoadMappings(ByVal wsRef As Worksheet, ByVal qualifiedMap As Object,
     Next key
 End Sub
 
+' 1行分のSQLへ変換表を適用し、変換後値を記録
 Private Function ApplyMappings(ByVal sourceText As String, ByVal qualifiedMap As Object, ByVal tokenMap As Object, ByVal replacementValues As Object) As String
     Dim resultText As String
     Dim key As Variant
@@ -163,6 +168,7 @@ Private Function ApplyMappings(ByVal sourceText As String, ByVal qualifiedMap As
     ApplyMappings = resultText
 End Function
 
+' 識別子単位で文字列を置換し、置換数と初回位置を返却
 Private Function ReplaceIdentifier(ByVal sourceText As String, ByVal searchText As String, ByVal replacementText As String, ByRef changeCount As Long, ByRef firstMatchIndex As Long) As String
     Dim re As Object
     Dim matches As Object
@@ -199,6 +205,7 @@ Private Function ReplaceIdentifier(ByVal sourceText As String, ByVal searchText 
     ReplaceIdentifier = resultText
 End Function
 
+' 正規表現の特殊文字をリテラル扱いへエスケープ
 Private Function EscapeRegexLiteral(ByVal value As String) As String
     Dim index As Long
     Dim character As String
@@ -217,6 +224,7 @@ Private Function EscapeRegexLiteral(ByVal value As String) As String
     EscapeRegexLiteral = resultText
 End Function
 
+' 辞書キーを文字数の降順で取得
 Private Function SortedKeysByLengthDesc(ByVal dictionary As Object) As Variant
     Dim keys As Variant
     Dim outerIndex As Long
@@ -243,6 +251,7 @@ Private Function SortedKeysByLengthDesc(ByVal dictionary As Object) As Variant
     SortedKeysByLengthDesc = keys
 End Function
 
+' 辞書キーを値の昇順で取得
 Private Function SortedKeysByValueAsc(ByVal dictionary As Object) As Variant
     Dim keys As Variant
     Dim outerIndex As Long
@@ -268,6 +277,7 @@ Private Function SortedKeysByValueAsc(ByVal dictionary As Object) As Variant
     SortedKeysByValueAsc = keys
 End Function
 
+' 行内の変換後値を出現位置付きで保持
 Private Sub AddReplacementValue(ByVal replacementValues As Object, ByVal replacementText As String, ByVal firstMatchIndex As Long)
     ' 同じ変換後値は1行内で重複表示しない
     If replacementValues.Exists(replacementText) Then
@@ -279,14 +289,17 @@ Private Sub AddReplacementValue(ByVal replacementValues As Object, ByVal replace
     End If
 End Sub
 
+' 変換キー用の値を前後空白なしの文字列へ正規化
 Private Function NormalizeKey(ByVal value As Variant) As String
     NormalizeKey = Trim$(CStr(value))
 End Function
 
+' 表示名用の値を前後空白なしの文字列へ正規化
 Private Function NormalizeName(ByVal value As Variant) As String
     NormalizeName = Trim$(CStr(value))
 End Function
 
+' 変換に使える和名か判定
 Private Function IsUsableJapaneseName(ByVal value As String) As Boolean
     Dim normalized As String
 
@@ -298,14 +311,17 @@ Private Function IsUsableJapaneseName(ByVal value As String) As Boolean
     IsUsableJapaneseName = True
 End Function
 
+' 変換定義シートを取得
 Private Function GetReferenceSheet() As Worksheet
     Set GetReferenceSheet = ResolveOrCreateSheet(ReferenceSheetName(), REF_LEGACY_SHEET, 1)
 End Function
 
+' SQL解析シートを取得
 Private Function GetSqlSheet() As Worksheet
     Set GetSqlSheet = ResolveOrCreateSheet(SqlSheetName(), SQL_LEGACY_SHEET, 2)
 End Function
 
+' 既存名または旧シート名からシートを解決し、なければ作成
 Private Function ResolveOrCreateSheet(ByVal primaryName As String, ByVal fallbackName As String, ByVal desiredIndex As Long) As Worksheet
     Dim ws As Worksheet
 
@@ -327,12 +343,14 @@ Private Function ResolveOrCreateSheet(ByVal primaryName As String, ByVal fallbac
     Set ResolveOrCreateSheet = ws
 End Function
 
+' 指定名のシートを存在する場合だけ取得
 Private Function TryGetWorksheet(ByVal sheetName As String) As Worksheet
     On Error Resume Next
     Set TryGetWorksheet = ThisWorkbook.Worksheets(sheetName)
     On Error GoTo 0
 End Function
 
+' 変換定義シートの見出しと列幅を設定
 Private Sub ApplyReferenceHeader(ByVal ws As Worksheet)
     ws.Cells(1, COL_TABLE_ID).Value = TableIdHeader()
     ws.Cells(1, COL_TABLE_NAME).Value = TableNameHeader()
@@ -342,6 +360,7 @@ Private Sub ApplyReferenceHeader(ByVal ws As Worksheet)
     ws.Columns("A:D").AutoFit
 End Sub
 
+' SQL解析シートの見出しと列幅を設定
 Private Sub ApplySqlHeader(ByVal ws As Worksheet)
     ws.Cells(1, COL_SQL).Value = SqlHeader()
     ws.Cells(1, COL_RESULT).Value = ResultHeader()
@@ -352,6 +371,7 @@ Private Sub ApplySqlHeader(ByVal ws As Worksheet)
     ws.Columns("C:Z").ColumnWidth = 24
 End Sub
 
+' SQL解析シートへ解析ボタンとクリアボタンを配置
 Private Sub InstallButtons(ByVal ws As Worksheet)
     Dim buttonTop As Double
     Dim buttonLeft As Double
@@ -379,12 +399,14 @@ Private Sub InstallButtons(ByVal ws As Worksheet)
     End With
 End Sub
 
+' 指定名の図形があれば削除
 Private Sub DeleteShapeIfExists(ByVal ws As Worksheet, ByVal shapeName As String)
     On Error Resume Next
     ws.Shapes(shapeName).Delete
     On Error GoTo 0
 End Sub
 
+' 解析結果の出力範囲をクリア
 Private Sub ClearAnalyzeOutput(ByVal wsSql As Worksheet, ByVal lastInputRow As Long)
     Dim clearLastRow As Long
     Dim clearLastColumn As Long
@@ -397,6 +419,7 @@ Private Sub ClearAnalyzeOutput(ByVal wsSql As Worksheet, ByVal lastInputRow As L
     End If
 End Sub
 
+' 変換後値をC列以降へ出現順に出力
 Private Sub WriteReplacementValues(ByVal wsSql As Worksheet, ByVal rowNumber As Long, ByVal replacementValues As Object)
     Dim index As Long
     Dim keys As Variant
@@ -411,6 +434,7 @@ Private Sub WriteReplacementValues(ByVal wsSql As Worksheet, ByVal rowNumber As 
     Next index
 End Sub
 
+' 指定シートの2行目以降を使用範囲に合わせてクリア
 Private Sub ClearRowsBelowHeader(ByVal ws As Worksheet, ByVal minimumLastColumn As Long)
     Dim lastRow As Long
     Dim lastColumn As Long
@@ -422,6 +446,7 @@ Private Sub ClearRowsBelowHeader(ByVal ws As Worksheet, ByVal minimumLastColumn 
     End If
 End Sub
 
+' 指定列の最終使用行を取得
 Private Function LastUsedRowInColumn(ByVal ws As Worksheet, ByVal columnNumber As Long) As Long
     Dim rowNumber As Long
 
@@ -433,6 +458,7 @@ Private Function LastUsedRowInColumn(ByVal ws As Worksheet, ByVal columnNumber A
     End If
 End Function
 
+' シート全体の最終使用行を取得
 Private Function LastUsedRow(ByVal ws As Worksheet) As Long
     Dim foundCell As Range
 
@@ -444,6 +470,7 @@ Private Function LastUsedRow(ByVal ws As Worksheet) As Long
     End If
 End Function
 
+' シート全体の最終使用列を取得
 Private Function LastUsedColumn(ByVal ws As Worksheet) As Long
     Dim foundCell As Range
 
@@ -455,6 +482,7 @@ Private Function LastUsedColumn(ByVal ws As Worksheet) As Long
     End If
 End Function
 
+' 2つのLong値の大きい方を取得
 Private Function MaxLong(ByVal leftValue As Long, ByVal rightValue As Long) As Long
     If leftValue >= rightValue Then
         MaxLong = leftValue
@@ -463,6 +491,7 @@ Private Function MaxLong(ByVal leftValue As Long, ByVal rightValue As Long) As L
     End If
 End Function
 
+' Unicodeコードポイント列から文字列を生成
 Private Function W(ParamArray codes() As Variant) As String
     Dim index As Long
     Dim resultText As String
@@ -475,70 +504,87 @@ Private Function W(ParamArray codes() As Variant) As String
     W = resultText
 End Function
 
+' 変換定義シート名を取得
 Private Function ReferenceSheetName() As String
     ReferenceSheetName = W(&H5909, &H63DB, &H5B9A, &H7FA9)
 End Function
 
+' SQL解析シート名を取得
 Private Function SqlSheetName() As String
     SqlSheetName = "SQL" & W(&H89E3, &H6790)
 End Function
 
+' 所属テーブルID見出しを取得
 Private Function TableIdHeader() As String
     TableIdHeader = W(&H6240, &H5C5E, &H30C6, &H30FC, &H30D6, &H30EB) & "ID"
 End Function
 
+' 所属テーブル和名見出しを取得
 Private Function TableNameHeader() As String
     TableNameHeader = W(&H6240, &H5C5E, &H30C6, &H30FC, &H30D6, &H30EB, &H548C, &H540D)
 End Function
 
+' フィールドID見出しを取得
 Private Function FieldIdHeader() As String
     FieldIdHeader = W(&H30D5, &H30A3, &H30FC, &H30EB, &H30C9) & "ID"
 End Function
 
+' フィールド和名見出しを取得
 Private Function FieldNameHeader() As String
     FieldNameHeader = W(&H30D5, &H30A3, &H30FC, &H30EB, &H30C9, &H548C, &H540D)
 End Function
 
+' SQLクエリ見出しを取得
 Private Function SqlHeader() As String
     SqlHeader = "SQL" & W(&H30AF, &H30A8, &H30EA)
 End Function
 
+' 和名変換後クエリ見出しを取得
 Private Function ResultHeader() As String
     ResultHeader = W(&H548C, &H540D, &H5909, &H63DB, &H5F8C, &H30AF, &H30A8, &H30EA)
 End Function
 
+' 変換内容見出しを取得
 Private Function ReplacementHeader() As String
     ReplacementHeader = W(&H5909, &H63DB, &H5185, &H5BB9)
 End Function
 
+' 解析ボタンの表示文字を取得
 Private Function AnalyzeButtonText() As String
     AnalyzeButtonText = W(&H89E3, &H6790)
 End Function
 
+' クリアボタンの表示文字を取得
 Private Function ClearButtonText() As String
     ClearButtonText = W(&H30AF, &H30EA, &H30A2)
 End Function
 
+' 和名未取得判定用の文字列を取得
 Private Function MissingNameText() As String
     MissingNameText = W(&H548C, &H540D, &H672A, &H53D6, &H5F97)
 End Function
 
+' 解析完了メッセージを取得
 Private Function AnalyzeDoneMessage() As String
     AnalyzeDoneMessage = W(&H89E3, &H6790, &H304C, &H5B8C, &H4E86, &H3057, &H307E, &H3057, &H305F, &H3002)
 End Function
 
+' クリア完了メッセージを取得
 Private Function ClearDoneMessage() As String
     ClearDoneMessage = W(&H30AF, &H30EA, &H30A2, &H304C, &H5B8C, &H4E86, &H3057, &H307E, &H3057, &H305F, &H3002)
 End Function
 
+' クリア確認メッセージを取得
 Private Function ClearConfirmMessage() As String
     ClearConfirmMessage = W(&H0032, &H884C, &H76EE, &H4EE5, &H964D, &H3092, &H30AF, &H30EA, &H30A2, &H3057, &H307E, &H3059, &H3002, &H3088, &H308D, &H3057, &H3044, &H3067, &H3059, &H304B, &HFF1F)
 End Function
 
+' 確認ダイアログのタイトルを取得
 Private Function ConfirmTitle() As String
     ConfirmTitle = W(&H78BA, &H8A8D)
 End Function
 
+' 変換定義なしメッセージを取得
 Private Function NoDefinitionMessage() As String
     NoDefinitionMessage = W(&H5909, &H63DB, &H5B9A, &H7FA9, &H30B7, &H30FC, &H30C8, &H306B, &H6709, &H52B9, &H306A, &H5909, &H63DB, &H5B9A, &H7FA9, &H304C, &H3042, &H308A, &H307E, &H305B, &H3093, &H3002)
 End Function
