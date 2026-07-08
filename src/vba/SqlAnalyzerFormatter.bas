@@ -159,7 +159,8 @@ Private Function ApplyMappings(ByVal sourceText As String, ByVal qualifiedMap As
     For Each key In SortedKeysByLengthDesc(tokenMap)
         replacementText = CStr(tokenMap(CStr(key)))
         changeCount = 0
-        resultText = ReplaceIdentifier(resultText, CStr(key), replacementText, changeCount, firstMatchIndex)
+        ' 単独IDはドット前後を除外し、テーブル修飾子を変換しない
+        resultText = ReplaceIdentifier(resultText, CStr(key), replacementText, changeCount, firstMatchIndex, True)
         If changeCount > 0 Then
             AddReplacementValue replacementValues, replacementText, firstMatchIndex
         End If
@@ -169,7 +170,7 @@ Private Function ApplyMappings(ByVal sourceText As String, ByVal qualifiedMap As
 End Function
 
 ' 識別子単位で文字列を置換し、置換数と初回位置を返却
-Private Function ReplaceIdentifier(ByVal sourceText As String, ByVal searchText As String, ByVal replacementText As String, ByRef changeCount As Long, ByRef firstMatchIndex As Long) As String
+Private Function ReplaceIdentifier(ByVal sourceText As String, ByVal searchText As String, ByVal replacementText As String, ByRef changeCount As Long, ByRef firstMatchIndex As Long, Optional ByVal excludeDotBoundary As Boolean = False) As String
     Dim re As Object
     Dim matches As Object
     Dim matchItem As Object
@@ -182,7 +183,11 @@ Private Function ReplaceIdentifier(ByVal sourceText As String, ByVal searchText 
     re.Global = True
     re.IgnoreCase = False
     ' 識別子の一部一致を避けるため、前後を英数字とアンダースコア以外に限定
-    re.Pattern = "(^|[^A-Za-z0-9_])" & EscapeRegexLiteral(searchText) & "([^A-Za-z0-9_]|$)"
+    If excludeDotBoundary Then
+        re.Pattern = "(^|[^A-Za-z0-9_.])" & EscapeRegexLiteral(searchText) & "([^A-Za-z0-9_.]|$)"
+    Else
+        re.Pattern = "(^|[^A-Za-z0-9_])" & EscapeRegexLiteral(searchText) & "([^A-Za-z0-9_]|$)"
+    End If
 
     Set matches = re.Execute(sourceText)
     changeCount = matches.Count
