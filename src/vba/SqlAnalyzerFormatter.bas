@@ -31,6 +31,8 @@ Public Sub AnalyzeQueries(Optional ByVal showMessage As Boolean = True)
     Dim wsSql As Worksheet
     Dim qualifiedMap As Object
     Dim tokenMap As Object
+    Dim qualifiedKeys As Variant
+    Dim tokenKeys As Variant
     Dim lastRow As Long
     Dim rowNumber As Long
     Dim sourceText As String
@@ -50,6 +52,9 @@ Public Sub AnalyzeQueries(Optional ByVal showMessage As Boolean = True)
         Exit Sub
     End If
 
+    qualifiedKeys = SortedKeysByLengthDesc(qualifiedMap)
+    tokenKeys = SortedKeysByLengthDesc(tokenMap)
+
     lastRow = LastUsedRowInColumn(wsSql, COL_SQL)
     ClearAnalyzeOutput wsSql, lastRow
 
@@ -57,7 +62,7 @@ Public Sub AnalyzeQueries(Optional ByVal showMessage As Boolean = True)
         sourceText = CStr(wsSql.Cells(rowNumber, COL_SQL).Value)
         If Len(sourceText) > 0 Then
             Set replacementValues = CreateTextDictionary()
-            convertedText = ApplyMappings(sourceText, qualifiedMap, tokenMap, replacementValues)
+            convertedText = ApplyMappings(sourceText, qualifiedMap, qualifiedKeys, tokenMap, tokenKeys, replacementValues)
             wsSql.Cells(rowNumber, COL_RESULT).Value = convertedText
             WriteReplacementValues wsSql, rowNumber, replacementValues
         End If
@@ -138,34 +143,49 @@ Private Sub LoadMappings(ByVal wsRef As Worksheet, ByVal qualifiedMap As Object,
 End Sub
 
 ' 1行分のSQLへ変換表を適用し、変換後値を記録
-Private Function ApplyMappings(ByVal sourceText As String, ByVal qualifiedMap As Object, ByVal tokenMap As Object, ByVal replacementValues As Object) As String
+Private Function ApplyMappings( _
+    ByVal sourceText As String, _
+    ByVal qualifiedMap As Object, _
+    ByVal qualifiedKeys As Variant, _
+    ByVal tokenMap As Object, _
+    ByVal tokenKeys As Variant, _
+    ByVal replacementValues As Object) As String
     Dim resultText As String
 
     resultText = sourceText
 
     ' 修飾付き識別子を先に処理し、単独IDとの重複置換を避ける
-    resultText = ApplyMappingSet(resultText, qualifiedMap, replacementValues, False)
+    resultText = ApplyMappingSet(resultText, qualifiedMap, qualifiedKeys, replacementValues, False)
     ' 単独IDはドット前後を除外し、テーブル修飾子を変換しない
-    resultText = ApplyMappingSet(resultText, tokenMap, replacementValues, True)
+    resultText = ApplyMappingSet(resultText, tokenMap, tokenKeys, replacementValues, True)
 
     ApplyMappings = resultText
 End Function
 
 ' 指定された変換表を1行分のSQLへ適用
-Private Function ApplyMappingSet(ByVal sourceText As String, ByVal mapping As Object, ByVal replacementValues As Object, ByVal excludeDotBoundary As Boolean) As String
+Private Function ApplyMappingSet( _
+    ByVal sourceText As String, _
+    ByVal mapping As Object, _
+    ByVal sortedKeys As Variant, _
+    ByVal replacementValues As Object, _
+    ByVal excludeDotBoundary As Boolean) As String
     Dim resultText As String
     Dim key As Variant
+    Dim searchText As String
     Dim changeCount As Long
     Dim replacementText As String
     Dim firstMatchIndex As Long
 
     resultText = sourceText
-    For Each key In SortedKeysByLengthDesc(mapping)
-        replacementText = CStr(mapping(CStr(key)))
-        changeCount = 0
-        resultText = ReplaceIdentifier(resultText, CStr(key), replacementText, changeCount, firstMatchIndex, excludeDotBoundary)
-        If changeCount > 0 Then
-            AddReplacementValue replacementValues, replacementText, firstMatchIndex
+    For Each key In sortedKeys
+        searchText = CStr(key)
+        If InStr(1, resultText, searchText, vbBinaryCompare) > 0 Then
+            replacementText = CStr(mapping(searchText))
+            changeCount = 0
+            resultText = ReplaceIdentifier(resultText, searchText, replacementText, changeCount, firstMatchIndex, excludeDotBoundary)
+            If changeCount > 0 Then
+                AddReplacementValue replacementValues, replacementText, firstMatchIndex
+            End If
         End If
     Next key
 
@@ -173,7 +193,13 @@ Private Function ApplyMappingSet(ByVal sourceText As String, ByVal mapping As Ob
 End Function
 
 ' 識別子単位で文字列を置換し、置換数と初回位置を返却
-Private Function ReplaceIdentifier(ByVal sourceText As String, ByVal searchText As String, ByVal replacementText As String, ByRef changeCount As Long, ByRef firstMatchIndex As Long, Optional ByVal excludeDotBoundary As Boolean = False) As String
+Private Function ReplaceIdentifier( _
+    ByVal sourceText As String, _
+    ByVal searchText As String, _
+    ByVal replacementText As String, _
+    ByRef changeCount As Long, _
+    ByRef firstMatchIndex As Long, _
+    Optional ByVal excludeDotBoundary As Boolean = False) As String
     Dim re As Object
     Dim matches As Object
     Dim matchItem As Object
