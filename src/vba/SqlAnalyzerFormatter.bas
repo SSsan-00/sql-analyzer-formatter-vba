@@ -30,9 +30,7 @@ Public Sub AnalyzeQueries(Optional ByVal showMessage As Boolean = True)
     Dim wsRef As Worksheet
     Dim wsSql As Worksheet
     Dim qualifiedMap As Object
-    Dim tokenMap As Object
     Dim qualifiedKeys As Variant
-    Dim tokenKeys As Variant
     Dim lastRow As Long
     Dim rowNumber As Long
     Dim sourceText As String
@@ -42,10 +40,9 @@ Public Sub AnalyzeQueries(Optional ByVal showMessage As Boolean = True)
     Set wsRef = GetReferenceSheet()
     Set wsSql = GetSqlSheet()
     Set qualifiedMap = CreateTextDictionary()
-    Set tokenMap = CreateTextDictionary()
 
-    LoadMappings wsRef, qualifiedMap, tokenMap
-    If qualifiedMap.Count = 0 And tokenMap.Count = 0 Then
+    LoadMappings wsRef, qualifiedMap
+    If qualifiedMap.Count = 0 Then
         If showMessage Then
             MsgBox NoDefinitionMessage(), vbInformation
         End If
@@ -54,7 +51,6 @@ Public Sub AnalyzeQueries(Optional ByVal showMessage As Boolean = True)
     End If
 
     qualifiedKeys = SortedKeysByLengthDesc(qualifiedMap)
-    tokenKeys = SortedKeysByLengthDesc(tokenMap)
 
     lastRow = LastUsedRowInColumn(wsSql, COL_SQL)
     ClearAnalyzeOutput wsSql, lastRow
@@ -63,7 +59,7 @@ Public Sub AnalyzeQueries(Optional ByVal showMessage As Boolean = True)
         sourceText = CStr(wsSql.Cells(rowNumber, COL_SQL).Value)
         If Len(sourceText) > 0 Then
             Set replacementValues = CreateTextDictionary()
-            convertedText = ApplyMappings(sourceText, qualifiedMap, qualifiedKeys, tokenMap, tokenKeys, replacementValues)
+            convertedText = ApplyMappings(sourceText, qualifiedMap, qualifiedKeys, replacementValues)
             wsSql.Cells(rowNumber, COL_RESULT).Value = convertedText
             WriteReplacementValues wsSql, rowNumber, replacementValues
         End If
@@ -100,49 +96,24 @@ Public Sub ClearData(Optional ByVal showMessage As Boolean = True)
     RestoreFindSearchOrderByRows wsSql
 End Sub
 
-' 変換定義シートから修飾付きIDと単独IDの変換表を作成
-Private Sub LoadMappings(ByVal wsRef As Worksheet, ByVal qualifiedMap As Object, ByVal tokenMap As Object)
-    Dim uniqueTokens As Object
-    Dim conflictTokens As Object
+' 変換定義シートから修飾付きIDの変換表を作成
+Private Sub LoadMappings(ByVal wsRef As Worksheet, ByVal qualifiedMap As Object)
     Dim lastRow As Long
     Dim rowNumber As Long
     Dim tableId As String
     Dim fieldId As String
     Dim fieldName As String
-    Dim key As Variant
 
-    Set uniqueTokens = CreateTextDictionary()
-    Set conflictTokens = CreateTextDictionary()
-
-    ' 単独フィールドIDは和名が一意に決まる場合だけ採用
     lastRow = LastUsedRow(wsRef)
     For rowNumber = 2 To lastRow
         tableId = NormalizeKey(wsRef.Cells(rowNumber, COL_TABLE_ID).Value)
         fieldId = NormalizeKey(wsRef.Cells(rowNumber, COL_FIELD_ID).Value)
         fieldName = NormalizeName(wsRef.Cells(rowNumber, COL_FIELD_NAME).Value)
 
-        If Len(fieldId) > 0 And IsUsableJapaneseName(fieldName) Then
-            If Len(tableId) > 0 And tableId <> "-" Then
-                qualifiedMap(tableId & "." & fieldId) = tableId & "." & fieldName
-            End If
-
-            If Not conflictTokens.Exists(fieldId) Then
-                If uniqueTokens.Exists(fieldId) Then
-                    If CStr(uniqueTokens(fieldId)) <> fieldName Then
-                        conflictTokens(fieldId) = True
-                    End If
-                Else
-                    uniqueTokens(fieldId) = fieldName
-                End If
-            End If
+        If Len(tableId) > 0 And tableId <> "-" And Len(fieldId) > 0 And IsUsableJapaneseName(fieldName) Then
+            qualifiedMap(tableId & "." & fieldId) = tableId & "." & fieldName
         End If
     Next rowNumber
-
-    For Each key In uniqueTokens.Keys
-        If Not conflictTokens.Exists(CStr(key)) Then
-            tokenMap(CStr(key)) = CStr(uniqueTokens(key))
-        End If
-    Next key
 End Sub
 
 ' 1行分のSQLへ変換表を適用し、変換後値を記録
@@ -150,17 +121,12 @@ Private Function ApplyMappings( _
     ByVal sourceText As String, _
     ByVal qualifiedMap As Object, _
     ByVal qualifiedKeys As Variant, _
-    ByVal tokenMap As Object, _
-    ByVal tokenKeys As Variant, _
     ByVal replacementValues As Object) As String
     Dim resultText As String
 
     resultText = sourceText
 
-    ' 修飾付き識別子を先に処理し、単独IDとの重複置換を避ける
-    resultText = ApplyMappingSet(resultText, qualifiedMap, qualifiedKeys, replacementValues, False)
-    ' 単独IDはドット前後を除外し、テーブル修飾子を変換しない
-    resultText = ApplyMappingSet(resultText, tokenMap, tokenKeys, replacementValues, True)
+    resultText = ApplyMappingSet(resultText, qualifiedMap, qualifiedKeys, replacementValues)
 
     ApplyMappings = resultText
 End Function
@@ -170,8 +136,7 @@ Private Function ApplyMappingSet( _
     ByVal sourceText As String, _
     ByVal mapping As Object, _
     ByVal sortedKeys As Variant, _
-    ByVal replacementValues As Object, _
-    ByVal excludeDotBoundary As Boolean) As String
+    ByVal replacementValues As Object) As String
     Dim resultText As String
     Dim key As Variant
     Dim searchText As String
@@ -185,7 +150,7 @@ Private Function ApplyMappingSet( _
         If InStr(1, resultText, searchText, vbBinaryCompare) > 0 Then
             replacementText = CStr(mapping(searchText))
             changeCount = 0
-            resultText = ReplaceIdentifier(resultText, searchText, replacementText, changeCount, firstMatchIndex, excludeDotBoundary)
+            resultText = ReplaceIdentifier(resultText, searchText, replacementText, changeCount, firstMatchIndex)
             If changeCount > 0 Then
                 AddReplacementValue replacementValues, replacementText, firstMatchIndex
             End If
@@ -201,8 +166,7 @@ Private Function ReplaceIdentifier( _
     ByVal searchText As String, _
     ByVal replacementText As String, _
     ByRef changeCount As Long, _
-    ByRef firstMatchIndex As Long, _
-    Optional ByVal excludeDotBoundary As Boolean = False) As String
+    ByRef firstMatchIndex As Long) As String
     Dim re As Object
     Dim matches As Object
     Dim matchItem As Object
@@ -215,11 +179,7 @@ Private Function ReplaceIdentifier( _
     re.Global = True
     re.IgnoreCase = False
     ' 識別子の一部一致を避けるため、前後を英数字とアンダースコア以外に限定
-    If excludeDotBoundary Then
-        re.Pattern = "(^|[^A-Za-z0-9_.])" & EscapeRegexLiteral(searchText) & "([^A-Za-z0-9_.]|$)"
-    Else
-        re.Pattern = "(^|[^A-Za-z0-9_])" & EscapeRegexLiteral(searchText) & "([^A-Za-z0-9_]|$)"
-    End If
+    re.Pattern = "(^|[^A-Za-z0-9_])" & EscapeRegexLiteral(searchText) & "([^A-Za-z0-9_]|$)"
 
     Set matches = re.Execute(sourceText)
     changeCount = matches.Count
