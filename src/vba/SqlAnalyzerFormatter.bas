@@ -12,6 +12,7 @@ Private Const COL_FIELD_NAME As Long = 4
 Private Const COL_SQL As Long = 1
 Private Const COL_RESULT As Long = 2
 Private Const COL_REPLACEMENT As Long = 3
+Private Const DEFAULT_FONT_SIZE As Long = 9
 
 ' ブックのシート名、見出し、操作ボタンを初期化
 Public Sub SetupWorkbook()
@@ -21,6 +22,7 @@ Public Sub SetupWorkbook()
     Set wsRef = ResolveOrCreateSheet(ReferenceSheetName(), REF_LEGACY_SHEET, 1)
     Set wsSql = ResolveOrCreateSheet(SqlSheetName(), SQL_LEGACY_SHEET, 2)
 
+    ApplyWorkbookFont
     RestoreHeaders wsRef, wsSql
     InstallButtons wsSql
 End Sub
@@ -69,7 +71,7 @@ Public Sub AnalyzeQueries(Optional ByVal showMessage As Boolean = True)
     Next rowNumber
 
     wsSql.Columns(COL_RESULT).WrapText = False
-    wsSql.Columns(COL_REPLACEMENT).WrapText = True
+    SetReplacementColumnsWrapText wsSql, False, LastUsedColumn(wsSql)
     If showMessage Then
         MsgBox AnalyzeDoneMessage(), vbInformation
     End If
@@ -390,6 +392,23 @@ Private Function CreateTextDictionary() As Object
     CreateTextDictionary.CompareMode = vbBinaryCompare
 End Function
 
+' ブック全体のセル文字書式を設定
+Private Sub ApplyWorkbookFont()
+    Dim ws As Worksheet
+
+    With ThisWorkbook.Styles("Normal").Font
+        .Name = DefaultFontName()
+        .Size = DEFAULT_FONT_SIZE
+    End With
+
+    For Each ws In ThisWorkbook.Worksheets
+        With ws.Cells.Font
+            .Name = DefaultFontName()
+            .Size = DEFAULT_FONT_SIZE
+        End With
+    Next ws
+End Sub
+
 ' 変換定義シートの見出しと列幅を設定
 Private Sub ApplyReferenceHeader(ByVal ws As Worksheet)
     ResetHeaderRange ws.Range("A1:D1")
@@ -411,12 +430,19 @@ Private Sub ApplySqlHeader(ByVal ws As Worksheet)
     ws.Rows(1).RowHeight = 30
     ws.Columns("A:B").ColumnWidth = 42
     ws.Columns("C:Z").ColumnWidth = 24
+    SetReplacementColumnsWrapText ws, False, 26
 End Sub
 
 ' ヘッダー範囲の結合と内容を初期化
 Private Sub ResetHeaderRange(ByVal headerRange As Range)
     headerRange.UnMerge
     headerRange.ClearContents
+End Sub
+
+' 変換内容列以降の折り返し設定を変更
+Private Sub SetReplacementColumnsWrapText(ByVal ws As Worksheet, ByVal wrapEnabled As Boolean, ByVal lastColumn As Long)
+    lastColumn = MaxLong(lastColumn, COL_REPLACEMENT)
+    ws.Range(ws.Columns(COL_REPLACEMENT), ws.Columns(lastColumn)).WrapText = wrapEnabled
 End Sub
 
 ' 変換定義シートとSQL解析シートのヘッダーを既定値に復元
@@ -616,6 +642,11 @@ End Function
 ' 和名未取得判定用の文字列を取得
 Private Function MissingNameText() As String
     MissingNameText = W(&H548C, &H540D, &H672A, &H53D6, &H5F97)
+End Function
+
+' 既定フォント名を取得
+Private Function DefaultFontName() As String
+    DefaultFontName = W(&HFF2D, &HFF33, &H0020, &H30B4, &H30B7, &H30C3, &H30AF)
 End Function
 
 ' 解析完了メッセージを取得
