@@ -12,7 +12,6 @@ Private Const COL_FIELD_NAME As Long = 4
 Private Const COL_SQL As Long = 1
 Private Const COL_RESULT As Long = 2
 Private Const COL_REPLACEMENT As Long = 3
-Private Const DEFAULT_FONT_SIZE As Long = 9
 
 ' ブックのシート名、見出し、操作ボタンを初期化
 Public Sub SetupWorkbook()
@@ -22,7 +21,6 @@ Public Sub SetupWorkbook()
     Set wsRef = ResolveOrCreateSheet(ReferenceSheetName(), REF_LEGACY_SHEET, 1)
     Set wsSql = ResolveOrCreateSheet(SqlSheetName(), SQL_LEGACY_SHEET, 2)
 
-    ApplyWorkbookFont
     RestoreHeaders wsRef, wsSql
     InstallButtons wsSql
 End Sub
@@ -392,23 +390,6 @@ Private Function CreateTextDictionary() As Object
     CreateTextDictionary.CompareMode = vbBinaryCompare
 End Function
 
-' ブック全体のセル文字書式を設定
-Private Sub ApplyWorkbookFont()
-    Dim ws As Worksheet
-
-    With ThisWorkbook.Styles("Normal").Font
-        .Name = DefaultFontName()
-        .Size = DEFAULT_FONT_SIZE
-    End With
-
-    For Each ws In ThisWorkbook.Worksheets
-        With ws.Cells.Font
-            .Name = DefaultFontName()
-            .Size = DEFAULT_FONT_SIZE
-        End With
-    Next ws
-End Sub
-
 ' 変換定義シートの見出しと列幅を設定
 Private Sub ApplyReferenceHeader(ByVal ws As Worksheet)
     ResetHeaderRange ws.Range("A1:D1")
@@ -642,11 +623,6 @@ End Function
 ' 和名未取得判定用の文字列を取得
 Private Function MissingNameText() As String
     MissingNameText = W(&H548C, &H540D, &H672A, &H53D6, &H5F97)
-End Function
-
-' 既定フォント名を取得
-Private Function DefaultFontName() As String
-    DefaultFontName = W(&HFF2D, &HFF33, &H0020, &H30B4, &H30B7, &H30C3, &H30AF)
 End Function
 
 ' 解析完了メッセージを取得
