@@ -103,83 +103,395 @@ End Sub
 
 ' CRUDサンプルクエリを投入
 Private Sub SeedCrudQueries(ByVal ws As Worksheet)
-    ws.Cells(2, COL_SQL).Value = "select trim(users.name) as name, users.user_id, orders.order_id, status from users inner join orders on users.user_id = orders.user_id where status = 'ACTIVE'"
-    ws.Cells(3, COL_SQL).Value = "insert into orders (order_id, user_id, amount, status, created_at) select orders.order_id, users.user_id, orders.amount, status, created_at from users"
-    ws.Cells(4, COL_SQL).Value = "update users set users.name = 'Taro', updated_at = CURRENT_TIMESTAMP, status = 'ACTIVE' where users.user_id = :user_id"
-    ws.Cells(5, COL_SQL).Value = "delete from orders where orders.order_id in (select order_items.order_id from order_items where order_items.product_id = :product_id) and status = 'CANCELLED'"
-    ws.Cells(6, COL_SQL).Value = "select users.user_id, case when sum(orders.amount) > 100000 then 'VIP' when sum(orders.amount) between 50000 and 100000 then 'STANDARD' else status end as rank_name from users left join orders on users.user_id = orders.user_id where ((status = 'ACTIVE' and orders.amount > 0) or (status = 'PENDING' and exists (select 1 from order_items where order_items.order_id = orders.order_id and order_items.quantity > 1))) group by users.user_id, status having count(orders.order_id) > 0 order by users.user_id, status"
-    ws.Cells(7, COL_SQL).Value = "select users.user_id, users.name, manager.name as manager_name from users inner join users manager on users.manager_id = manager.user_id where manager.status = status order by manager.name"
-    ws.Cells(8, COL_SQL).Value = "select users.user_id, users.email, status into user_export from users where users.email is not null and status in ('ACTIVE', 'LOCKED') order by users.email"
-    ws.Cells(9, COL_SQL).Value = "update orders set orders.amount = orders.amount * 1.1, updated_at = CURRENT_TIMESTAMP from orders inner join users on orders.user_id = users.user_id where (users.email like :domain or status = 'PENDING') and (orders.amount > 1000 or exists (select 1 from order_items where order_items.order_id = orders.order_id))"
-    ws.Cells(10, COL_SQL).Value = "delete from order_items where exists (select 1 from orders where orders.order_id = order_items.order_id and (status = 'CANCELLED' or orders.amount <= 0))"
+    ws.Cells(2, COL_SQL).Value = InputSelectSql()
+    ws.Cells(3, COL_SQL).Value = InputInsertSql()
+    ws.Cells(4, COL_SQL).Value = InputUpdateSql()
+    ws.Cells(5, COL_SQL).Value = InputDeleteSql()
+    ws.Cells(6, COL_SQL).Value = InputComplexSelectSql()
+    ws.Cells(7, COL_SQL).Value = InputSelfJoinSql()
+    ws.Cells(8, COL_SQL).Value = InputSelectIntoSql()
+    ws.Cells(9, COL_SQL).Value = InputUpdateFromSql()
+    ws.Cells(10, COL_SQL).Value = InputDeleteExistsSql()
 End Sub
 
+Private Function InputSelectSql() As String
+    InputSelectSql = Lines( _
+        "select", _
+        "    trim(users.name) as name,", _
+        "    users.user_id,", _
+        "    orders.order_id,", _
+        "    status", _
+        "from", _
+        "    users", _
+        "    inner join orders", _
+        "        on users.user_id = orders.user_id", _
+        "where", _
+        "    status = 'ACTIVE'")
+End Function
+
+Private Function InputInsertSql() As String
+    InputInsertSql = Lines( _
+        "insert into orders (", _
+        "    order_id,", _
+        "    user_id,", _
+        "    amount,", _
+        "    status,", _
+        "    created_at", _
+        ")", _
+        "select", _
+        "    orders.order_id,", _
+        "    users.user_id,", _
+        "    orders.amount,", _
+        "    status,", _
+        "    created_at", _
+        "from", _
+        "    users")
+End Function
+
+Private Function InputUpdateSql() As String
+    InputUpdateSql = Lines( _
+        "update", _
+        "    users", _
+        "set", _
+        "    users.name = 'Taro',", _
+        "    updated_at = CURRENT_TIMESTAMP,", _
+        "    status = 'ACTIVE'", _
+        "where", _
+        "    users.user_id = :user_id")
+End Function
+
+Private Function InputDeleteSql() As String
+    InputDeleteSql = Lines( _
+        "delete from", _
+        "    orders", _
+        "where", _
+        "    orders.order_id in (", _
+        "        select", _
+        "            order_items.order_id", _
+        "        from", _
+        "            order_items", _
+        "        where", _
+        "            order_items.product_id = :product_id", _
+        "    )", _
+        "    and status = 'CANCELLED'")
+End Function
+
+Private Function InputComplexSelectSql() As String
+    Dim resultText As String
+
+    AppendLine resultText, "select"
+    AppendLine resultText, "    users.user_id,"
+    AppendLine resultText, "    case"
+    AppendLine resultText, "        when sum(orders.amount) > 100000 then 'VIP'"
+    AppendLine resultText, "        when sum(orders.amount) between 50000 and 100000 then 'STANDARD'"
+    AppendLine resultText, "        else status"
+    AppendLine resultText, "    end as rank_name"
+    AppendLine resultText, "from"
+    AppendLine resultText, "    users"
+    AppendLine resultText, "    left join orders"
+    AppendLine resultText, "        on users.user_id = orders.user_id"
+    AppendLine resultText, "where"
+    AppendLine resultText, "    ("
+    AppendLine resultText, "        (status = 'ACTIVE' and orders.amount > 0)"
+    AppendLine resultText, "        or ("
+    AppendLine resultText, "            status = 'PENDING'"
+    AppendLine resultText, "            and exists ("
+    AppendLine resultText, "                select"
+    AppendLine resultText, "                    1"
+    AppendLine resultText, "                from"
+    AppendLine resultText, "                    order_items"
+    AppendLine resultText, "                where"
+    AppendLine resultText, "                    order_items.order_id = orders.order_id"
+    AppendLine resultText, "                    and order_items.quantity > 1"
+    AppendLine resultText, "            )"
+    AppendLine resultText, "        )"
+    AppendLine resultText, "    )"
+    AppendLine resultText, "group by"
+    AppendLine resultText, "    users.user_id,"
+    AppendLine resultText, "    status"
+    AppendLine resultText, "having"
+    AppendLine resultText, "    count(orders.order_id) > 0"
+    AppendLine resultText, "order by"
+    AppendLine resultText, "    users.user_id,"
+    AppendLine resultText, "    status"
+
+    InputComplexSelectSql = resultText
+End Function
+
+Private Function InputSelfJoinSql() As String
+    InputSelfJoinSql = Lines( _
+        "select", _
+        "    users.user_id,", _
+        "    users.name,", _
+        "    manager.name as manager_name", _
+        "from", _
+        "    users", _
+        "    inner join users manager", _
+        "        on users.manager_id = manager.user_id", _
+        "where", _
+        "    manager.status = status", _
+        "order by", _
+        "    manager.name")
+End Function
+
+Private Function InputSelectIntoSql() As String
+    InputSelectIntoSql = Lines( _
+        "select", _
+        "    users.user_id,", _
+        "    users.email,", _
+        "    status", _
+        "into", _
+        "    user_export", _
+        "from", _
+        "    users", _
+        "where", _
+        "    users.email is not null", _
+        "    and status in ('ACTIVE', 'LOCKED')", _
+        "order by", _
+        "    users.email")
+End Function
+
+Private Function InputUpdateFromSql() As String
+    InputUpdateFromSql = Lines( _
+        "update", _
+        "    orders", _
+        "set", _
+        "    orders.amount = orders.amount * 1.1,", _
+        "    updated_at = CURRENT_TIMESTAMP", _
+        "from", _
+        "    orders", _
+        "    inner join users", _
+        "        on orders.user_id = users.user_id", _
+        "where", _
+        "    (users.email like :domain or status = 'PENDING')", _
+        "    and (", _
+        "        orders.amount > 1000", _
+        "        or exists (", _
+        "            select", _
+        "                1", _
+        "            from", _
+        "                order_items", _
+        "            where", _
+        "                order_items.order_id = orders.order_id", _
+        "        )", _
+        "    )")
+End Function
+
+Private Function InputDeleteExistsSql() As String
+    InputDeleteExistsSql = Lines( _
+        "delete from", _
+        "    order_items", _
+        "where", _
+        "    exists (", _
+        "        select", _
+        "            1", _
+        "        from", _
+        "            orders", _
+        "        where", _
+        "            orders.order_id = order_items.order_id", _
+        "            and (status = 'CANCELLED' or orders.amount <= 0)", _
+        "    )")
+End Function
+
 Private Function ExpectedSelectSql() As String
-    ExpectedSelectSql = "select trim(users." & FullNameText() & ") as name, users." & UserIdText() & _
-        ", orders." & OrderIdText() & ", " & StatusText() & _
-        " from users inner join orders on users." & UserIdText() & " = orders." & OrderUserIdText() & _
-        " where " & StatusText() & " = 'ACTIVE'"
+    ExpectedSelectSql = Lines( _
+        "select", _
+        "    trim(users." & FullNameText() & ") as name,", _
+        "    users." & UserIdText() & ",", _
+        "    orders." & OrderIdText() & ",", _
+        "    " & StatusText(), _
+        "from", _
+        "    users", _
+        "    inner join orders", _
+        "        on users." & UserIdText() & " = orders." & OrderUserIdText(), _
+        "where", _
+        "    " & StatusText() & " = 'ACTIVE'")
 End Function
 
 Private Function ExpectedInsertSql() As String
-    ExpectedInsertSql = "insert into orders (order_id, user_id, amount, " & StatusText() & ", " & CreatedAtText() & _
-        ") select orders." & OrderIdText() & ", users." & UserIdText() & ", orders." & AmountText() & _
-        ", " & StatusText() & ", " & CreatedAtText() & " from users"
+    ExpectedInsertSql = Lines( _
+        "insert into orders (", _
+        "    order_id,", _
+        "    user_id,", _
+        "    amount,", _
+        "    " & StatusText() & ",", _
+        "    " & CreatedAtText(), _
+        ")", _
+        "select", _
+        "    orders." & OrderIdText() & ",", _
+        "    users." & UserIdText() & ",", _
+        "    orders." & AmountText() & ",", _
+        "    " & StatusText() & ",", _
+        "    " & CreatedAtText(), _
+        "from", _
+        "    users")
 End Function
 
 Private Function ExpectedUpdateSql() As String
-    ExpectedUpdateSql = "update users set users." & FullNameText() & " = 'Taro', " & _
-        UpdatedAtText() & " = CURRENT_TIMESTAMP, " & StatusText() & _
-        " = 'ACTIVE' where users." & UserIdText() & " = :user_id"
+    ExpectedUpdateSql = Lines( _
+        "update", _
+        "    users", _
+        "set", _
+        "    users." & FullNameText() & " = 'Taro',", _
+        "    " & UpdatedAtText() & " = CURRENT_TIMESTAMP,", _
+        "    " & StatusText() & " = 'ACTIVE'", _
+        "where", _
+        "    users." & UserIdText() & " = :user_id")
 End Function
 
 Private Function ExpectedDeleteSql() As String
-    ExpectedDeleteSql = "delete from orders where orders." & OrderIdText() & _
-        " in (select order_items." & DetailOrderIdText() & _
-        " from order_items where order_items." & ProductIdText() & _
-        " = :product_id) and " & StatusText() & " = 'CANCELLED'"
+    ExpectedDeleteSql = Lines( _
+        "delete from", _
+        "    orders", _
+        "where", _
+        "    orders." & OrderIdText() & " in (", _
+        "        select", _
+        "            order_items." & DetailOrderIdText(), _
+        "        from", _
+        "            order_items", _
+        "        where", _
+        "            order_items." & ProductIdText() & " = :product_id", _
+        "    )", _
+        "    and " & StatusText() & " = 'CANCELLED'")
 End Function
 
 Private Function ExpectedComplexSelectSql() As String
-    ExpectedComplexSelectSql = "select users." & UserIdText() & ", case when sum(orders." & AmountText() & _
-        ") > 100000 then 'VIP' when sum(orders." & AmountText() & _
-        ") between 50000 and 100000 then 'STANDARD' else " & StatusText() & _
-        " end as rank_name from users left join orders on users." & UserIdText() & _
-        " = orders." & OrderUserIdText() & " where ((" & StatusText() & _
-        " = 'ACTIVE' and orders." & AmountText() & " > 0) or (" & StatusText() & _
-        " = 'PENDING' and exists (select 1 from order_items where order_items." & DetailOrderIdText() & _
-        " = orders." & OrderIdText() & " and order_items." & QuantityText() & _
-        " > 1))) group by users." & UserIdText() & ", " & StatusText() & _
-        " having count(orders." & OrderIdText() & ") > 0 order by users." & UserIdText() & ", " & StatusText()
+    Dim resultText As String
+
+    AppendLine resultText, "select"
+    AppendLine resultText, "    users." & UserIdText() & ","
+    AppendLine resultText, "    case"
+    AppendLine resultText, "        when sum(orders." & AmountText() & ") > 100000 then 'VIP'"
+    AppendLine resultText, "        when sum(orders." & AmountText() & ") between 50000 and 100000 then 'STANDARD'"
+    AppendLine resultText, "        else " & StatusText()
+    AppendLine resultText, "    end as rank_name"
+    AppendLine resultText, "from"
+    AppendLine resultText, "    users"
+    AppendLine resultText, "    left join orders"
+    AppendLine resultText, "        on users." & UserIdText() & " = orders." & OrderUserIdText()
+    AppendLine resultText, "where"
+    AppendLine resultText, "    ("
+    AppendLine resultText, "        (" & StatusText() & " = 'ACTIVE' and orders." & AmountText() & " > 0)"
+    AppendLine resultText, "        or ("
+    AppendLine resultText, "            " & StatusText() & " = 'PENDING'"
+    AppendLine resultText, "            and exists ("
+    AppendLine resultText, "                select"
+    AppendLine resultText, "                    1"
+    AppendLine resultText, "                from"
+    AppendLine resultText, "                    order_items"
+    AppendLine resultText, "                where"
+    AppendLine resultText, "                    order_items." & DetailOrderIdText() & " = orders." & OrderIdText()
+    AppendLine resultText, "                    and order_items." & QuantityText() & " > 1"
+    AppendLine resultText, "            )"
+    AppendLine resultText, "        )"
+    AppendLine resultText, "    )"
+    AppendLine resultText, "group by"
+    AppendLine resultText, "    users." & UserIdText() & ","
+    AppendLine resultText, "    " & StatusText()
+    AppendLine resultText, "having"
+    AppendLine resultText, "    count(orders." & OrderIdText() & ") > 0"
+    AppendLine resultText, "order by"
+    AppendLine resultText, "    users." & UserIdText() & ","
+    AppendLine resultText, "    " & StatusText()
+
+    ExpectedComplexSelectSql = resultText
 End Function
 
 Private Function ExpectedSelfJoinSql() As String
-    ExpectedSelfJoinSql = "select users." & UserIdText() & ", users." & FullNameText() & _
-        ", manager." & FullNameText() & " as manager_name from users inner join users manager on users." & _
-        ManagerIdText() & " = manager." & UserIdText() & " where manager." & StatusText() & _
-        " = " & StatusText() & " order by manager." & FullNameText()
+    ExpectedSelfJoinSql = Lines( _
+        "select", _
+        "    users." & UserIdText() & ",", _
+        "    users." & FullNameText() & ",", _
+        "    manager." & FullNameText() & " as manager_name", _
+        "from", _
+        "    users", _
+        "    inner join users manager", _
+        "        on users." & ManagerIdText() & " = manager." & UserIdText(), _
+        "where", _
+        "    manager." & StatusText() & " = " & StatusText(), _
+        "order by", _
+        "    manager." & FullNameText())
 End Function
 
 Private Function ExpectedSelectIntoSql() As String
-    ExpectedSelectIntoSql = "select users." & UserIdText() & ", users." & MailText() & _
-        ", " & StatusText() & " into user_export from users where users." & MailText() & _
-        " is not null and " & StatusText() & " in ('ACTIVE', 'LOCKED') order by users." & MailText()
+    ExpectedSelectIntoSql = Lines( _
+        "select", _
+        "    users." & UserIdText() & ",", _
+        "    users." & MailText() & ",", _
+        "    " & StatusText(), _
+        "into", _
+        "    user_export", _
+        "from", _
+        "    users", _
+        "where", _
+        "    users." & MailText() & " is not null", _
+        "    and " & StatusText() & " in ('ACTIVE', 'LOCKED')", _
+        "order by", _
+        "    users." & MailText())
 End Function
 
 Private Function ExpectedUpdateFromSql() As String
-    ExpectedUpdateFromSql = "update orders set orders." & AmountText() & " = orders." & AmountText() & _
-        " * 1.1, " & UpdatedAtText() & " = CURRENT_TIMESTAMP from orders inner join users on orders." & _
-        OrderUserIdText() & " = users." & UserIdText() & " where (users." & MailText() & _
-        " like :domain or " & StatusText() & " = 'PENDING') and (orders." & AmountText() & _
-        " > 1000 or exists (select 1 from order_items where order_items." & DetailOrderIdText() & _
-        " = orders." & OrderIdText() & "))"
+    ExpectedUpdateFromSql = Lines( _
+        "update", _
+        "    orders", _
+        "set", _
+        "    orders." & AmountText() & " = orders." & AmountText() & " * 1.1,", _
+        "    " & UpdatedAtText() & " = CURRENT_TIMESTAMP", _
+        "from", _
+        "    orders", _
+        "    inner join users", _
+        "        on orders." & OrderUserIdText() & " = users." & UserIdText(), _
+        "where", _
+        "    (users." & MailText() & " like :domain or " & StatusText() & " = 'PENDING')", _
+        "    and (", _
+        "        orders." & AmountText() & " > 1000", _
+        "        or exists (", _
+        "            select", _
+        "                1", _
+        "            from", _
+        "                order_items", _
+        "            where", _
+        "                order_items." & DetailOrderIdText() & " = orders." & OrderIdText(), _
+        "        )", _
+        "    )")
 End Function
 
 Private Function ExpectedDeleteExistsSql() As String
-    ExpectedDeleteExistsSql = "delete from order_items where exists (select 1 from orders where orders." & _
-        OrderIdText() & " = order_items." & DetailOrderIdText() & " and (" & StatusText() & _
-        " = 'CANCELLED' or orders." & AmountText() & " <= 0))"
+    ExpectedDeleteExistsSql = Lines( _
+        "delete from", _
+        "    order_items", _
+        "where", _
+        "    exists (", _
+        "        select", _
+        "            1", _
+        "        from", _
+        "            orders", _
+        "        where", _
+        "            orders." & OrderIdText() & " = order_items." & DetailOrderIdText(), _
+        "            and (" & StatusText() & " = 'CANCELLED' or orders." & AmountText() & " <= 0)", _
+        "    )")
 End Function
+
+Private Function Lines(ParamArray values() As Variant) As String
+    Dim index As Long
+    Dim resultText As String
+
+    For index = LBound(values) To UBound(values)
+        If index > LBound(values) Then
+            resultText = resultText & vbLf
+        End If
+        resultText = resultText & CStr(values(index))
+    Next index
+
+    Lines = resultText
+End Function
+
+Private Sub AppendLine(ByRef resultText As String, ByVal lineText As String)
+    If Len(resultText) > 0 Then
+        resultText = resultText & vbLf
+    End If
+    resultText = resultText & lineText
+End Sub
 
 Private Sub PutDefinition(ByVal ws As Worksheet, ByVal rowNumber As Long, ByVal tableId As String, ByVal tableName As String, ByVal fieldId As String, ByVal fieldName As String)
     ws.Cells(rowNumber, 1).Value = tableId
