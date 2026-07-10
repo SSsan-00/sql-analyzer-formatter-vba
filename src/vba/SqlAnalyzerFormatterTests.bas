@@ -50,6 +50,16 @@ Public Sub AnalyzeQueries_ConvertsCrudFixtures()
         Array("users." & FullNameText(), UpdatedAtText(), StatusText(), "users." & UserIdText())
     AssertAnalyzeRow wsSql, 5, ExpectedDeleteSql(), _
         Array("orders." & OrderIdText(), "order_items." & DetailOrderIdText(), "order_items." & ProductIdText(), StatusText())
+    AssertAnalyzeRow wsSql, 6, ExpectedComplexSelectSql(), _
+        Array("users." & UserIdText(), "orders." & AmountText(), StatusText(), "orders." & OrderUserIdText(), "order_items." & DetailOrderIdText(), "orders." & OrderIdText(), "order_items." & QuantityText())
+    AssertAnalyzeRow wsSql, 7, ExpectedSelfJoinSql(), _
+        Array("users." & UserIdText(), "users." & FullNameText(), "manager." & FullNameText(), "users." & ManagerIdText(), "manager." & UserIdText(), "manager." & StatusText(), StatusText())
+    AssertAnalyzeRow wsSql, 8, ExpectedSelectIntoSql(), _
+        Array("users." & UserIdText(), "users." & MailText(), StatusText())
+    AssertAnalyzeRow wsSql, 9, ExpectedUpdateFromSql(), _
+        Array("orders." & AmountText(), UpdatedAtText(), "orders." & OrderUserIdText(), "users." & UserIdText(), "users." & MailText(), StatusText(), "order_items." & DetailOrderIdText(), "orders." & OrderIdText())
+    AssertAnalyzeRow wsSql, 10, ExpectedDeleteExistsSql(), _
+        Array("orders." & OrderIdText(), "order_items." & DetailOrderIdText(), StatusText(), "orders." & AmountText())
 End Sub
 
 ' CRUDを含む解析テスト用データを作成
@@ -82,9 +92,13 @@ Private Sub SeedReferenceDefinitions(ByVal ws As Worksheet)
     PutDefinition ws, 8, "order_items", OrderItemTableText(), "order_id", DetailOrderIdText()
     PutDefinition ws, 9, "order_items", OrderItemTableText(), "product_id", ProductIdText()
     PutDefinition ws, 10, "order_items", OrderItemTableText(), "quantity", QuantityText()
-    PutDefinition ws, 11, "-", "", "status", StatusText()
-    PutDefinition ws, 12, "-", "", "created_at", CreatedAtText()
-    PutDefinition ws, 13, "-", "", "updated_at", UpdatedAtText()
+    PutDefinition ws, 11, "users", UserTableText(), "manager_id", ManagerIdText()
+    PutDefinition ws, 12, "manager", ManagerTableText(), "user_id", UserIdText()
+    PutDefinition ws, 13, "manager", ManagerTableText(), "name", FullNameText()
+    PutDefinition ws, 14, "manager", ManagerTableText(), "status", StatusText()
+    PutDefinition ws, 15, "-", "", "status", StatusText()
+    PutDefinition ws, 16, "-", "", "created_at", CreatedAtText()
+    PutDefinition ws, 17, "-", "", "updated_at", UpdatedAtText()
 End Sub
 
 ' CRUDサンプルクエリを投入
@@ -93,6 +107,11 @@ Private Sub SeedCrudQueries(ByVal ws As Worksheet)
     ws.Cells(3, COL_SQL).Value = "insert into orders (order_id, user_id, amount, status, created_at) select orders.order_id, users.user_id, orders.amount, status, created_at from users"
     ws.Cells(4, COL_SQL).Value = "update users set users.name = 'Taro', updated_at = CURRENT_TIMESTAMP, status = 'ACTIVE' where users.user_id = :user_id"
     ws.Cells(5, COL_SQL).Value = "delete from orders where orders.order_id in (select order_items.order_id from order_items where order_items.product_id = :product_id) and status = 'CANCELLED'"
+    ws.Cells(6, COL_SQL).Value = "select users.user_id, case when sum(orders.amount) > 100000 then 'VIP' when sum(orders.amount) between 50000 and 100000 then 'STANDARD' else status end as rank_name from users left join orders on users.user_id = orders.user_id where ((status = 'ACTIVE' and orders.amount > 0) or (status = 'PENDING' and exists (select 1 from order_items where order_items.order_id = orders.order_id and order_items.quantity > 1))) group by users.user_id, status having count(orders.order_id) > 0 order by users.user_id, status"
+    ws.Cells(7, COL_SQL).Value = "select users.user_id, users.name, manager.name as manager_name from users inner join users manager on users.manager_id = manager.user_id where manager.status = status order by manager.name"
+    ws.Cells(8, COL_SQL).Value = "select users.user_id, users.email, status into user_export from users where users.email is not null and status in ('ACTIVE', 'LOCKED') order by users.email"
+    ws.Cells(9, COL_SQL).Value = "update orders set orders.amount = orders.amount * 1.1, updated_at = CURRENT_TIMESTAMP from orders inner join users on orders.user_id = users.user_id where (users.email like :domain or status = 'PENDING') and (orders.amount > 1000 or exists (select 1 from order_items where order_items.order_id = orders.order_id))"
+    ws.Cells(10, COL_SQL).Value = "delete from order_items where exists (select 1 from orders where orders.order_id = order_items.order_id and (status = 'CANCELLED' or orders.amount <= 0))"
 End Sub
 
 Private Function ExpectedSelectSql() As String
@@ -119,6 +138,47 @@ Private Function ExpectedDeleteSql() As String
         " in (select order_items." & DetailOrderIdText() & _
         " from order_items where order_items." & ProductIdText() & _
         " = :product_id) and " & StatusText() & " = 'CANCELLED'"
+End Function
+
+Private Function ExpectedComplexSelectSql() As String
+    ExpectedComplexSelectSql = "select users." & UserIdText() & ", case when sum(orders." & AmountText() & _
+        ") > 100000 then 'VIP' when sum(orders." & AmountText() & _
+        ") between 50000 and 100000 then 'STANDARD' else " & StatusText() & _
+        " end as rank_name from users left join orders on users." & UserIdText() & _
+        " = orders." & OrderUserIdText() & " where ((" & StatusText() & _
+        " = 'ACTIVE' and orders." & AmountText() & " > 0) or (" & StatusText() & _
+        " = 'PENDING' and exists (select 1 from order_items where order_items." & DetailOrderIdText() & _
+        " = orders." & OrderIdText() & " and order_items." & QuantityText() & _
+        " > 1))) group by users." & UserIdText() & ", " & StatusText() & _
+        " having count(orders." & OrderIdText() & ") > 0 order by users." & UserIdText() & ", " & StatusText()
+End Function
+
+Private Function ExpectedSelfJoinSql() As String
+    ExpectedSelfJoinSql = "select users." & UserIdText() & ", users." & FullNameText() & _
+        ", manager." & FullNameText() & " as manager_name from users inner join users manager on users." & _
+        ManagerIdText() & " = manager." & UserIdText() & " where manager." & StatusText() & _
+        " = " & StatusText() & " order by manager." & FullNameText()
+End Function
+
+Private Function ExpectedSelectIntoSql() As String
+    ExpectedSelectIntoSql = "select users." & UserIdText() & ", users." & MailText() & _
+        ", " & StatusText() & " into user_export from users where users." & MailText() & _
+        " is not null and " & StatusText() & " in ('ACTIVE', 'LOCKED') order by users." & MailText()
+End Function
+
+Private Function ExpectedUpdateFromSql() As String
+    ExpectedUpdateFromSql = "update orders set orders." & AmountText() & " = orders." & AmountText() & _
+        " * 1.1, " & UpdatedAtText() & " = CURRENT_TIMESTAMP from orders inner join users on orders." & _
+        OrderUserIdText() & " = users." & UserIdText() & " where (users." & MailText() & _
+        " like :domain or " & StatusText() & " = 'PENDING') and (orders." & AmountText() & _
+        " > 1000 or exists (select 1 from order_items where order_items." & DetailOrderIdText() & _
+        " = orders." & OrderIdText() & "))"
+End Function
+
+Private Function ExpectedDeleteExistsSql() As String
+    ExpectedDeleteExistsSql = "delete from order_items where exists (select 1 from orders where orders." & _
+        OrderIdText() & " = order_items." & DetailOrderIdText() & " and (" & StatusText() & _
+        " = 'CANCELLED' or orders." & AmountText() & " <= 0))"
 End Function
 
 Private Sub PutDefinition(ByVal ws As Worksheet, ByVal rowNumber As Long, ByVal tableId As String, ByVal tableName As String, ByVal fieldId As String, ByVal fieldName As String)
@@ -202,6 +262,10 @@ Private Function OrderItemTableText() As String
     OrderItemTableText = W(&H6CE8, &H6587, &H660E, &H7D30)
 End Function
 
+Private Function ManagerTableText() As String
+    ManagerTableText = W(&H7BA1, &H7406, &H8005)
+End Function
+
 Private Function UserIdText() As String
     UserIdText = UserTableText() & "ID"
 End Function
@@ -212,6 +276,10 @@ End Function
 
 Private Function MailText() As String
     MailText = W(&H30E1, &H30FC, &H30EB)
+End Function
+
+Private Function ManagerIdText() As String
+    ManagerIdText = ManagerTableText() & "ID"
 End Function
 
 Private Function OrderIdText() As String
