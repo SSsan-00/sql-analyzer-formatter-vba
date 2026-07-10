@@ -17,9 +17,11 @@ Private Const COL_REPLACEMENT As Long = 3
 Public Sub SetupWorkbook()
     Dim wsRef As Worksheet
     Dim wsSql As Worksheet
+    Dim wsOutput As Worksheet
 
     Set wsRef = ResolveOrCreateSheet(ReferenceSheetName(), REF_LEGACY_SHEET, 1)
     Set wsSql = ResolveOrCreateSheet(SqlSheetName(), SQL_LEGACY_SHEET, 2)
+    Set wsOutput = ResolveOrCreateSheet(OutputSheetName(), OutputSheetName(), 3)
 
     RestoreHeaders wsRef, wsSql
     InstallButtons wsSql
@@ -379,6 +381,11 @@ Private Function GetSqlSheet() As Worksheet
     Set GetSqlSheet = ResolveOrCreateSheet(SqlSheetName(), SQL_LEGACY_SHEET, 2)
 End Function
 
+' アウトプットシートを取得
+Private Function GetOutputSheet() As Worksheet
+    Set GetOutputSheet = ResolveOrCreateSheet(OutputSheetName(), OutputSheetName(), 3)
+End Function
+
 ' 既存名または旧シート名からシートを解決し、なければ作成
 Private Function ResolveOrCreateSheet(ByVal primaryName As String, ByVal fallbackName As String, ByVal desiredIndex As Long) As Worksheet
     Dim ws As Worksheet
@@ -645,6 +652,11 @@ End Function
 ' SQL解析シート名を取得
 Private Function SqlSheetName() As String
     SqlSheetName = "SQL" & W(&H89E3, &H6790)
+End Function
+
+' アウトプットシート名を取得
+Private Function OutputSheetName() As String
+    OutputSheetName = W(&H30A2, &H30A6, &H30C8, &H30D7, &H30C3, &H30C8)
 End Function
 
 ' 所属テーブルID見出しを取得
