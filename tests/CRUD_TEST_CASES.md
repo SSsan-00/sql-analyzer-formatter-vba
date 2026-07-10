@@ -4,7 +4,7 @@
 変換定義とSQLを固定し、解析結果と将来の `アウトプット` シート出力を比較しながら実装します。
 
 解析対象SQLは、A5:SQL Mk-2（A5M2）の `Ctrl+q` で整形した結果を `SQL解析` シートのA列セルへ貼り付ける前提です。
-そのため、テスト入力は改行とインデントを含む複数行SQLとして扱います。
+テストコードではA5M2が付ける行末スペースを `TS(...)` で明示して保持します。この文書では視認性のため行末スペースを省略しています。
 
 ## 変換定義
 
@@ -29,22 +29,36 @@
 
 ## SELECT
 
-入力:
+入力（A5M2 Ctrl+Q 整形後）
 
 ```sql
-select trim(users.name) as name, users.user_id, orders.order_id, status
-from users
-inner join orders on users.user_id = orders.user_id
-where status = 'ACTIVE'
+select
+    trim(users.name) as name
+    , users.user_id
+    , orders.order_id
+    , status
+from
+    users
+    inner join orders
+        on users.user_id = orders.user_id
+where
+    status = 'ACTIVE'
 ```
 
-期待する和名変換後:
+期待する和名変換後
 
 ```sql
-select trim(users.氏名) as name, users.ユーザーID, orders.注文ID, 状態
-from users
-inner join orders on users.ユーザーID = orders.注文ユーザーID
-where 状態 = 'ACTIVE'
+select
+    trim(users.氏名) as name
+    , users.ユーザーID
+    , orders.注文ID
+    , 状態
+from
+    users
+    inner join orders
+        on users.ユーザーID = orders.注文ユーザーID
+where
+    状態 = 'ACTIVE'
 ```
 
 変換内容:
@@ -59,20 +73,34 @@ where 状態 = 'ACTIVE'
 
 ## INSERT
 
-入力:
+入力（A5M2 Ctrl+Q 整形後）
 
 ```sql
-insert into orders (order_id, user_id, amount, status, created_at)
-select orders.order_id, users.user_id, orders.amount, status, created_at
-from users
+insert
+into orders(order_id, user_id, amount, status, created_at)
+select
+    orders.order_id
+    , users.user_id
+    , orders.amount
+    , status
+    , created_at
+from
+    users
 ```
 
-期待する和名変換後:
+期待する和名変換後
 
 ```sql
-insert into orders (order_id, user_id, amount, 状態, 作成日時)
-select orders.注文ID, users.ユーザーID, orders.金額, 状態, 作成日時
-from users
+insert
+into orders(order_id, user_id, amount, 状態, 作成日時)
+select
+    orders.注文ID
+    , users.ユーザーID
+    , orders.金額
+    , 状態
+    , 作成日時
+from
+    users
 ```
 
 変換内容:
@@ -87,24 +115,28 @@ from users
 
 ## UPDATE
 
-入力:
+入力（A5M2 Ctrl+Q 整形後）
 
 ```sql
 update users
-set users.name = 'Taro',
-    updated_at = CURRENT_TIMESTAMP,
-    status = 'ACTIVE'
-where users.user_id = :user_id
+set
+    users.name = 'Taro'
+    , updated_at = CURRENT_TIMESTAMP
+    , status = 'ACTIVE'
+where
+    users.user_id = :user_id
 ```
 
-期待する和名変換後:
+期待する和名変換後
 
 ```sql
 update users
-set users.氏名 = 'Taro',
-    更新日時 = CURRENT_TIMESTAMP,
-    状態 = 'ACTIVE'
-where users.ユーザーID = :user_id
+set
+    users.氏名 = 'Taro'
+    , 更新日時 = CURRENT_TIMESTAMP
+    , 状態 = 'ACTIVE'
+where
+    users.ユーザーID = :user_id
 ```
 
 変換内容:
@@ -118,28 +150,40 @@ where users.ユーザーID = :user_id
 
 ## DELETE
 
-入力:
+入力（A5M2 Ctrl+Q 整形後）
 
 ```sql
-delete from orders
-where orders.order_id in (
-    select order_items.order_id
-    from order_items
-    where order_items.product_id = :product_id
-)
-and status = 'CANCELLED'
+delete
+from
+    orders
+where
+    orders.order_id in (
+        select
+            order_items.order_id
+        from
+            order_items
+        where
+            order_items.product_id = :product_id
+    )
+    and status = 'CANCELLED'
 ```
 
-期待する和名変換後:
+期待する和名変換後
 
 ```sql
-delete from orders
-where orders.注文ID in (
-    select order_items.明細注文ID
-    from order_items
-    where order_items.商品ID = :product_id
-)
-and 状態 = 'CANCELLED'
+delete
+from
+    orders
+where
+    orders.注文ID in (
+        select
+            order_items.明細注文ID
+        from
+            order_items
+        where
+            order_items.商品ID = :product_id
+    )
+    and 状態 = 'CANCELLED'
 ```
 
 変換内容:
@@ -153,60 +197,88 @@ and 状態 = 'CANCELLED'
 
 ## 複合SELECT CASE / WHEN / ELSE / HAVING / ORDER BY
 
-入力:
+入力（A5M2 Ctrl+Q 整形後）
 
 ```sql
-select users.user_id,
-       case
-           when sum(orders.amount) > 100000 then 'VIP'
-           when sum(orders.amount) between 50000 and 100000 then 'STANDARD'
-           else status
-       end as rank_name
-from users
-left join orders on users.user_id = orders.user_id
-where (
-    (status = 'ACTIVE' and orders.amount > 0)
-    or (
-        status = 'PENDING'
-        and exists (
-            select 1
-            from order_items
-            where order_items.order_id = orders.order_id
-              and order_items.quantity > 1
+select
+    users.user_id
+    , case
+        when sum(orders.amount) > 100000
+            then 'VIP'
+        when sum(orders.amount) between 50000 and 100000
+            then 'STANDARD'
+        else status
+        end as rank_name
+from
+    users
+    left join orders
+        on users.user_id = orders.user_id
+where
+    (
+        (status = 'ACTIVE' and orders.amount > 0)
+        or (
+            status = 'PENDING'
+            and exists (
+                select
+                    1
+                from
+                    order_items
+                where
+                    order_items.order_id = orders.order_id
+                    and order_items.quantity > 1
+            )
         )
     )
-)
-group by users.user_id, status
-having count(orders.order_id) > 0
-order by users.user_id, status
+group by
+    users.user_id
+    , status
+having
+    count(orders.order_id) > 0
+order by
+    users.user_id
+    , status
 ```
 
-期待する和名変換後:
+期待する和名変換後
 
 ```sql
-select users.ユーザーID,
-       case
-           when sum(orders.金額) > 100000 then 'VIP'
-           when sum(orders.金額) between 50000 and 100000 then 'STANDARD'
-           else 状態
-       end as rank_name
-from users
-left join orders on users.ユーザーID = orders.注文ユーザーID
-where (
-    (状態 = 'ACTIVE' and orders.金額 > 0)
-    or (
-        状態 = 'PENDING'
-        and exists (
-            select 1
-            from order_items
-            where order_items.明細注文ID = orders.注文ID
-              and order_items.数量 > 1
+select
+    users.ユーザーID
+    , case
+        when sum(orders.金額) > 100000
+            then 'VIP'
+        when sum(orders.金額) between 50000 and 100000
+            then 'STANDARD'
+        else 状態
+        end as rank_name
+from
+    users
+    left join orders
+        on users.ユーザーID = orders.注文ユーザーID
+where
+    (
+        (状態 = 'ACTIVE' and orders.金額 > 0)
+        or (
+            状態 = 'PENDING'
+            and exists (
+                select
+                    1
+                from
+                    order_items
+                where
+                    order_items.明細注文ID = orders.注文ID
+                    and order_items.数量 > 1
+            )
         )
     )
-)
-group by users.ユーザーID, 状態
-having count(orders.注文ID) > 0
-order by users.ユーザーID, 状態
+group by
+    users.ユーザーID
+    , 状態
+having
+    count(orders.注文ID) > 0
+order by
+    users.ユーザーID
+    , 状態
 ```
 
 変換内容:
@@ -223,24 +295,38 @@ order by users.ユーザーID, 状態
 
 ## 自己結合
 
-入力:
+入力（A5M2 Ctrl+Q 整形後）
 
 ```sql
-select users.user_id, users.name, manager.name as manager_name
-from users
-inner join users manager on users.manager_id = manager.user_id
-where manager.status = status
-order by manager.name
+select
+    users.user_id
+    , users.name
+    , manager.name as manager_name
+from
+    users
+    inner join users manager
+        on users.manager_id = manager.user_id
+where
+    manager.status = status
+order by
+    manager.name
 ```
 
-期待する和名変換後:
+期待する和名変換後
 
 ```sql
-select users.ユーザーID, users.氏名, manager.氏名 as manager_name
-from users
-inner join users manager on users.管理者ID = manager.ユーザーID
-where manager.状態 = 状態
-order by manager.氏名
+select
+    users.ユーザーID
+    , users.氏名
+    , manager.氏名 as manager_name
+from
+    users
+    inner join users manager
+        on users.管理者ID = manager.ユーザーID
+where
+    manager.状態 = 状態
+order by
+    manager.氏名
 ```
 
 変換内容:
@@ -257,26 +343,38 @@ order by manager.氏名
 
 ## SELECT-INTO
 
-入力:
+入力（A5M2 Ctrl+Q 整形後）
 
 ```sql
-select users.user_id, users.email, status
+select
+    users.user_id
+    , users.email
+    , status
 into user_export
-from users
-where users.email is not null
-  and status in ('ACTIVE', 'LOCKED')
-order by users.email
+from
+    users
+where
+    users.email is not null
+    and status in ('ACTIVE', 'LOCKED')
+order by
+    users.email
 ```
 
-期待する和名変換後:
+期待する和名変換後
 
 ```sql
-select users.ユーザーID, users.メール, 状態
+select
+    users.ユーザーID
+    , users.メール
+    , 状態
 into user_export
-from users
-where users.メール is not null
-  and 状態 in ('ACTIVE', 'LOCKED')
-order by users.メール
+from
+    users
+where
+    users.メール is not null
+    and 状態 in ('ACTIVE', 'LOCKED')
+order by
+    users.メール
 ```
 
 変換内容:
@@ -289,42 +387,56 @@ order by users.メール
 
 ## UPDATE-FROM
 
-入力:
+入力（A5M2 Ctrl+Q 整形後）
 
 ```sql
 update orders
-set orders.amount = orders.amount * 1.1,
-    updated_at = CURRENT_TIMESTAMP
-from orders
-inner join users on orders.user_id = users.user_id
-where (users.email like :domain or status = 'PENDING')
-  and (
-      orders.amount > 1000
-      or exists (
-          select 1
-          from order_items
-          where order_items.order_id = orders.order_id
-      )
-  )
+set
+    orders.amount = orders.amount * 1.1
+    , updated_at = CURRENT_TIMESTAMP
+from
+    orders
+    inner join users
+        on orders.user_id = users.user_id
+where
+    (users.email like :domain or status = 'PENDING')
+    and (
+        orders.amount > 1000
+        or exists (
+            select
+                1
+            from
+                order_items
+            where
+                order_items.order_id = orders.order_id
+        )
+    )
 ```
 
-期待する和名変換後:
+期待する和名変換後
 
 ```sql
 update orders
-set orders.金額 = orders.金額 * 1.1,
-    更新日時 = CURRENT_TIMESTAMP
-from orders
-inner join users on orders.注文ユーザーID = users.ユーザーID
-where (users.メール like :domain or 状態 = 'PENDING')
-  and (
-      orders.金額 > 1000
-      or exists (
-          select 1
-          from order_items
-          where order_items.明細注文ID = orders.注文ID
-      )
-  )
+set
+    orders.金額 = orders.金額 * 1.1
+    , 更新日時 = CURRENT_TIMESTAMP
+from
+    orders
+    inner join users
+        on orders.注文ユーザーID = users.ユーザーID
+where
+    (users.メール like :domain or 状態 = 'PENDING')
+    and (
+        orders.金額 > 1000
+        or exists (
+            select
+                1
+            from
+                order_items
+            where
+                order_items.明細注文ID = orders.注文ID
+        )
+    )
 ```
 
 変換内容:
@@ -342,28 +454,40 @@ where (users.メール like :domain or 状態 = 'PENDING')
 
 ## DELETE EXISTS
 
-入力:
+入力（A5M2 Ctrl+Q 整形後）
 
 ```sql
-delete from order_items
-where exists (
-    select 1
-    from orders
-    where orders.order_id = order_items.order_id
-      and (status = 'CANCELLED' or orders.amount <= 0)
-)
+delete
+from
+    order_items
+where
+    exists (
+        select
+            1
+        from
+            orders
+        where
+            orders.order_id = order_items.order_id
+            and (status = 'CANCELLED' or orders.amount <= 0)
+    )
 ```
 
-期待する和名変換後:
+期待する和名変換後
 
 ```sql
-delete from order_items
-where exists (
-    select 1
-    from orders
-    where orders.注文ID = order_items.明細注文ID
-      and (状態 = 'CANCELLED' or orders.金額 <= 0)
-)
+delete
+from
+    order_items
+where
+    exists (
+        select
+            1
+        from
+            orders
+        where
+            orders.注文ID = order_items.明細注文ID
+            and (状態 = 'CANCELLED' or orders.金額 <= 0)
+    )
 ```
 
 変換内容:
@@ -377,5 +501,4 @@ where exists (
 
 ## 出力シート
 
-将来の整形出力先シート名は `アウトプット` です。
-現時点ではシートの存在だけをテストし、具体的な列構成は次の仕様検討で決めます。
+将来の整形出力先シート名は `アウトプット` です。現在のテストではシートの存在とSQL解析結果を検証し、具体的な列構成は次の仕様検討で決定します。

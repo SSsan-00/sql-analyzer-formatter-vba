@@ -114,384 +114,330 @@ Private Sub SeedCrudQueries(ByVal ws As Worksheet)
     ws.Cells(10, COL_SQL).Value = InputDeleteExistsSql()
 End Sub
 
+' A5M2で整形したSELECTの入力SQLを返す
 Private Function InputSelectSql() As String
-    InputSelectSql = Lines( _
-        "select", _
-        "    trim(users.name) as name,", _
-        "    users.user_id,", _
-        "    orders.order_id,", _
-        "    status", _
-        "from", _
-        "    users", _
-        "    inner join orders", _
-        "        on users.user_id = orders.user_id", _
-        "where", _
-        "    status = 'ACTIVE'")
+    Dim resultText As String
+
+    AppendA5M2Line resultText, "select"
+    AppendA5M2Line resultText, "    trim(users.name) as name"
+    AppendA5M2Line resultText, "    , users.user_id"
+    AppendA5M2Line resultText, "    , orders.order_id"
+    AppendA5M2Line resultText, TS("    , status")
+    AppendA5M2Line resultText, "from"
+    AppendA5M2Line resultText, TS("    users")
+    AppendA5M2Line resultText, TS("    inner join orders")
+    AppendA5M2Line resultText, TS("        on users.user_id = orders.user_id")
+    AppendA5M2Line resultText, "where"
+    AppendA5M2Line resultText, "    status = 'ACTIVE'"
+
+    InputSelectSql = FinishA5M2Sql(resultText)
 End Function
 
+' A5M2で整形したINSERTの入力SQLを返す
 Private Function InputInsertSql() As String
-    InputInsertSql = Lines( _
-        "insert into orders (", _
-        "    order_id,", _
-        "    user_id,", _
-        "    amount,", _
-        "    status,", _
-        "    created_at", _
-        ")", _
-        "select", _
-        "    orders.order_id,", _
-        "    users.user_id,", _
-        "    orders.amount,", _
-        "    status,", _
-        "    created_at", _
-        "from", _
-        "    users")
+    Dim resultText As String
+
+    AppendA5M2Line resultText, TS("insert")
+    AppendA5M2Line resultText, TS("into orders(order_id, user_id, amount, status, created_at)")
+    AppendA5M2Line resultText, "select"
+    AppendA5M2Line resultText, "    orders.order_id"
+    AppendA5M2Line resultText, "    , users.user_id"
+    AppendA5M2Line resultText, "    , orders.amount"
+    AppendA5M2Line resultText, "    , status"
+    AppendA5M2Line resultText, TS("    , created_at")
+    AppendA5M2Line resultText, "from"
+    AppendA5M2Line resultText, "    users"
+
+    InputInsertSql = FinishA5M2Sql(resultText)
 End Function
 
+' A5M2で整形したUPDATEの入力SQLを返す
 Private Function InputUpdateSql() As String
-    InputUpdateSql = Lines( _
-        "update", _
-        "    users", _
-        "set", _
-        "    users.name = 'Taro',", _
-        "    updated_at = CURRENT_TIMESTAMP,", _
-        "    status = 'ACTIVE'", _
-        "where", _
-        "    users.user_id = :user_id")
+    Dim resultText As String
+
+    AppendA5M2Line resultText, TS("update users")
+    AppendA5M2Line resultText, "set"
+    AppendA5M2Line resultText, "    users.name = 'Taro'"
+    AppendA5M2Line resultText, "    , updated_at = CURRENT_TIMESTAMP"
+    AppendA5M2Line resultText, TS("    , status = 'ACTIVE'")
+    AppendA5M2Line resultText, "where"
+    AppendA5M2Line resultText, "    users.user_id = :user_id"
+
+    InputUpdateSql = FinishA5M2Sql(resultText)
 End Function
 
+' A5M2で整形したDELETEの入力SQLを返す
 Private Function InputDeleteSql() As String
-    InputDeleteSql = Lines( _
-        "delete from", _
-        "    orders", _
-        "where", _
-        "    orders.order_id in (", _
-        "        select", _
-        "            order_items.order_id", _
-        "        from", _
-        "            order_items", _
-        "        where", _
-        "            order_items.product_id = :product_id", _
-        "    )", _
-        "    and status = 'CANCELLED'")
+    Dim resultText As String
+
+    AppendA5M2Line resultText, TS("delete")
+    AppendA5M2Line resultText, "from"
+    AppendA5M2Line resultText, TS("    orders")
+    AppendA5M2Line resultText, "where"
+    AppendA5M2Line resultText, TS("    orders.order_id in (")
+    AppendA5M2Line resultText, "        select"
+    AppendA5M2Line resultText, TS("            order_items.order_id")
+    AppendA5M2Line resultText, "        from"
+    AppendA5M2Line resultText, TS("            order_items")
+    AppendA5M2Line resultText, "        where"
+    AppendA5M2Line resultText, "            order_items.product_id = :product_id"
+    AppendA5M2Line resultText, TS("    )")
+    AppendA5M2Line resultText, "    and status = 'CANCELLED'"
+
+    InputDeleteSql = FinishA5M2Sql(resultText)
 End Function
 
+' A5M2で整形した複合SELECTの入力SQLを返す
 Private Function InputComplexSelectSql() As String
     Dim resultText As String
 
-    AppendLine resultText, "select"
-    AppendLine resultText, "    users.user_id,"
-    AppendLine resultText, "    case"
-    AppendLine resultText, "        when sum(orders.amount) > 100000 then 'VIP'"
-    AppendLine resultText, "        when sum(orders.amount) between 50000 and 100000 then 'STANDARD'"
-    AppendLine resultText, "        else status"
-    AppendLine resultText, "    end as rank_name"
-    AppendLine resultText, "from"
-    AppendLine resultText, "    users"
-    AppendLine resultText, "    left join orders"
-    AppendLine resultText, "        on users.user_id = orders.user_id"
-    AppendLine resultText, "where"
-    AppendLine resultText, "    ("
-    AppendLine resultText, "        (status = 'ACTIVE' and orders.amount > 0)"
-    AppendLine resultText, "        or ("
-    AppendLine resultText, "            status = 'PENDING'"
-    AppendLine resultText, "            and exists ("
-    AppendLine resultText, "                select"
-    AppendLine resultText, "                    1"
-    AppendLine resultText, "                from"
-    AppendLine resultText, "                    order_items"
-    AppendLine resultText, "                where"
-    AppendLine resultText, "                    order_items.order_id = orders.order_id"
-    AppendLine resultText, "                    and order_items.quantity > 1"
-    AppendLine resultText, "            )"
-    AppendLine resultText, "        )"
-    AppendLine resultText, "    )"
-    AppendLine resultText, "group by"
-    AppendLine resultText, "    users.user_id,"
-    AppendLine resultText, "    status"
-    AppendLine resultText, "having"
-    AppendLine resultText, "    count(orders.order_id) > 0"
-    AppendLine resultText, "order by"
-    AppendLine resultText, "    users.user_id,"
-    AppendLine resultText, "    status"
+    AppendA5M2Line resultText, "select"
+    AppendA5M2Line resultText, "    users.user_id"
+    AppendA5M2Line resultText, TS("    , case")
+    AppendA5M2Line resultText, TS("        when sum(orders.amount) > 100000")
+    AppendA5M2Line resultText, TS("            then 'VIP'")
+    AppendA5M2Line resultText, TS("        when sum(orders.amount) between 50000 and 100000")
+    AppendA5M2Line resultText, TS("            then 'STANDARD'")
+    AppendA5M2Line resultText, TS("        else status")
+    AppendA5M2Line resultText, TS("        end as rank_name")
+    AppendA5M2Line resultText, "from"
+    AppendA5M2Line resultText, TS("    users")
+    AppendA5M2Line resultText, TS("    left join orders")
+    AppendA5M2Line resultText, TS("        on users.user_id = orders.user_id")
+    AppendA5M2Line resultText, "where"
+    AppendA5M2Line resultText, TS("    (")
+    AppendA5M2Line resultText, TS("        (status = 'ACTIVE' and orders.amount > 0)")
+    AppendA5M2Line resultText, TS("        or (")
+    AppendA5M2Line resultText, TS("            status = 'PENDING'")
+    AppendA5M2Line resultText, TS("            and exists (")
+    AppendA5M2Line resultText, "                select"
+    AppendA5M2Line resultText, TS("                    1")
+    AppendA5M2Line resultText, "                from"
+    AppendA5M2Line resultText, TS("                    order_items")
+    AppendA5M2Line resultText, "                where"
+    AppendA5M2Line resultText, TS("                    order_items.order_id = orders.order_id")
+    AppendA5M2Line resultText, "                    and order_items.quantity > 1"
+    AppendA5M2Line resultText, "            )"
+    AppendA5M2Line resultText, "        )"
+    AppendA5M2Line resultText, TS("    )")
+    AppendA5M2Line resultText, "group by"
+    AppendA5M2Line resultText, "    users.user_id"
+    AppendA5M2Line resultText, TS("    , status")
+    AppendA5M2Line resultText, "having"
+    AppendA5M2Line resultText, TS("    count(orders.order_id) > 0")
+    AppendA5M2Line resultText, "order by"
+    AppendA5M2Line resultText, "    users.user_id"
+    AppendA5M2Line resultText, "    , status"
 
-    InputComplexSelectSql = resultText
+    InputComplexSelectSql = FinishA5M2Sql(resultText)
 End Function
 
+' A5M2で整形した自己結合の入力SQLを返す
 Private Function InputSelfJoinSql() As String
-    InputSelfJoinSql = Lines( _
-        "select", _
-        "    users.user_id,", _
-        "    users.name,", _
-        "    manager.name as manager_name", _
-        "from", _
-        "    users", _
-        "    inner join users manager", _
-        "        on users.manager_id = manager.user_id", _
-        "where", _
-        "    manager.status = status", _
-        "order by", _
-        "    manager.name")
+    Dim resultText As String
+
+    AppendA5M2Line resultText, "select"
+    AppendA5M2Line resultText, "    users.user_id"
+    AppendA5M2Line resultText, "    , users.name"
+    AppendA5M2Line resultText, TS("    , manager.name as manager_name")
+    AppendA5M2Line resultText, "from"
+    AppendA5M2Line resultText, TS("    users")
+    AppendA5M2Line resultText, TS("    inner join users manager")
+    AppendA5M2Line resultText, TS("        on users.manager_id = manager.user_id")
+    AppendA5M2Line resultText, "where"
+    AppendA5M2Line resultText, TS("    manager.status = status")
+    AppendA5M2Line resultText, "order by"
+    AppendA5M2Line resultText, "    manager.name"
+
+    InputSelfJoinSql = FinishA5M2Sql(resultText)
 End Function
 
+' A5M2で整形したSELECT-INTOの入力SQLを返す
 Private Function InputSelectIntoSql() As String
-    InputSelectIntoSql = Lines( _
-        "select", _
-        "    users.user_id,", _
-        "    users.email,", _
-        "    status", _
-        "into", _
-        "    user_export", _
-        "from", _
-        "    users", _
-        "where", _
-        "    users.email is not null", _
-        "    and status in ('ACTIVE', 'LOCKED')", _
-        "order by", _
-        "    users.email")
+    Dim resultText As String
+
+    AppendA5M2Line resultText, "select"
+    AppendA5M2Line resultText, "    users.user_id"
+    AppendA5M2Line resultText, "    , users.email"
+    AppendA5M2Line resultText, TS("    , status")
+    AppendA5M2Line resultText, TS("into user_export")
+    AppendA5M2Line resultText, "from"
+    AppendA5M2Line resultText, TS("    users")
+    AppendA5M2Line resultText, "where"
+    AppendA5M2Line resultText, TS("    users.email is not null")
+    AppendA5M2Line resultText, TS("    and status in ('ACTIVE', 'LOCKED')")
+    AppendA5M2Line resultText, "order by"
+    AppendA5M2Line resultText, "    users.email"
+
+    InputSelectIntoSql = FinishA5M2Sql(resultText)
 End Function
 
+' A5M2で整形したUPDATE-FROMの入力SQLを返す
 Private Function InputUpdateFromSql() As String
-    InputUpdateFromSql = Lines( _
-        "update", _
-        "    orders", _
-        "set", _
-        "    orders.amount = orders.amount * 1.1,", _
-        "    updated_at = CURRENT_TIMESTAMP", _
-        "from", _
-        "    orders", _
-        "    inner join users", _
-        "        on orders.user_id = users.user_id", _
-        "where", _
-        "    (users.email like :domain or status = 'PENDING')", _
-        "    and (", _
-        "        orders.amount > 1000", _
-        "        or exists (", _
-        "            select", _
-        "                1", _
-        "            from", _
-        "                order_items", _
-        "            where", _
-        "                order_items.order_id = orders.order_id", _
-        "        )", _
-        "    )")
+    Dim resultText As String
+
+    AppendA5M2Line resultText, TS("update orders")
+    AppendA5M2Line resultText, "set"
+    AppendA5M2Line resultText, "    orders.amount = orders.amount * 1.1"
+    AppendA5M2Line resultText, TS("    , updated_at = CURRENT_TIMESTAMP")
+    AppendA5M2Line resultText, "from"
+    AppendA5M2Line resultText, TS("    orders")
+    AppendA5M2Line resultText, TS("    inner join users")
+    AppendA5M2Line resultText, TS("        on orders.user_id = users.user_id")
+    AppendA5M2Line resultText, "where"
+    AppendA5M2Line resultText, TS("    (users.email like :domain or status = 'PENDING')")
+    AppendA5M2Line resultText, TS("    and (")
+    AppendA5M2Line resultText, TS("        orders.amount > 1000")
+    AppendA5M2Line resultText, TS("        or exists (")
+    AppendA5M2Line resultText, "            select"
+    AppendA5M2Line resultText, TS("                1")
+    AppendA5M2Line resultText, "            from"
+    AppendA5M2Line resultText, TS("                order_items")
+    AppendA5M2Line resultText, "            where"
+    AppendA5M2Line resultText, "                order_items.order_id = orders.order_id"
+    AppendA5M2Line resultText, "        )"
+    AppendA5M2Line resultText, "    )"
+
+    InputUpdateFromSql = FinishA5M2Sql(resultText)
 End Function
 
+' A5M2で整形したDELETE EXISTSの入力SQLを返す
 Private Function InputDeleteExistsSql() As String
-    InputDeleteExistsSql = Lines( _
-        "delete from", _
-        "    order_items", _
-        "where", _
-        "    exists (", _
-        "        select", _
-        "            1", _
-        "        from", _
-        "            orders", _
-        "        where", _
-        "            orders.order_id = order_items.order_id", _
-        "            and (status = 'CANCELLED' or orders.amount <= 0)", _
-        "    )")
+    Dim resultText As String
+
+    AppendA5M2Line resultText, TS("delete")
+    AppendA5M2Line resultText, "from"
+    AppendA5M2Line resultText, TS("    order_items")
+    AppendA5M2Line resultText, "where"
+    AppendA5M2Line resultText, TS("    exists (")
+    AppendA5M2Line resultText, "        select"
+    AppendA5M2Line resultText, TS("            1")
+    AppendA5M2Line resultText, "        from"
+    AppendA5M2Line resultText, TS("            orders")
+    AppendA5M2Line resultText, "        where"
+    AppendA5M2Line resultText, TS("            orders.order_id = order_items.order_id")
+    AppendA5M2Line resultText, "            and (status = 'CANCELLED' or orders.amount <= 0)"
+    AppendA5M2Line resultText, "    )"
+
+    InputDeleteExistsSql = FinishA5M2Sql(resultText)
 End Function
 
+' SELECTの和名変換後期待値を返す
 Private Function ExpectedSelectSql() As String
-    ExpectedSelectSql = Lines( _
-        "select", _
-        "    trim(users." & FullNameText() & ") as name,", _
-        "    users." & UserIdText() & ",", _
-        "    orders." & OrderIdText() & ",", _
-        "    " & StatusText(), _
-        "from", _
-        "    users", _
-        "    inner join orders", _
-        "        on users." & UserIdText() & " = orders." & OrderUserIdText(), _
-        "where", _
-        "    " & StatusText() & " = 'ACTIVE'")
+    ExpectedSelectSql = ConvertFixtureSql(InputSelectSql())
 End Function
 
+' INSERTの和名変換後期待値を返す
 Private Function ExpectedInsertSql() As String
-    ExpectedInsertSql = Lines( _
-        "insert into orders (", _
-        "    order_id,", _
-        "    user_id,", _
-        "    amount,", _
-        "    " & StatusText() & ",", _
-        "    " & CreatedAtText(), _
-        ")", _
-        "select", _
-        "    orders." & OrderIdText() & ",", _
-        "    users." & UserIdText() & ",", _
-        "    orders." & AmountText() & ",", _
-        "    " & StatusText() & ",", _
-        "    " & CreatedAtText(), _
-        "from", _
-        "    users")
+    ExpectedInsertSql = ConvertFixtureSql(InputInsertSql())
 End Function
 
+' UPDATEの和名変換後期待値を返す
 Private Function ExpectedUpdateSql() As String
-    ExpectedUpdateSql = Lines( _
-        "update", _
-        "    users", _
-        "set", _
-        "    users." & FullNameText() & " = 'Taro',", _
-        "    " & UpdatedAtText() & " = CURRENT_TIMESTAMP,", _
-        "    " & StatusText() & " = 'ACTIVE'", _
-        "where", _
-        "    users." & UserIdText() & " = :user_id")
+    ExpectedUpdateSql = ConvertFixtureSql(InputUpdateSql())
 End Function
 
+' DELETEの和名変換後期待値を返す
 Private Function ExpectedDeleteSql() As String
-    ExpectedDeleteSql = Lines( _
-        "delete from", _
-        "    orders", _
-        "where", _
-        "    orders." & OrderIdText() & " in (", _
-        "        select", _
-        "            order_items." & DetailOrderIdText(), _
-        "        from", _
-        "            order_items", _
-        "        where", _
-        "            order_items." & ProductIdText() & " = :product_id", _
-        "    )", _
-        "    and " & StatusText() & " = 'CANCELLED'")
+    ExpectedDeleteSql = ConvertFixtureSql(InputDeleteSql())
 End Function
 
+' 複合SELECTの和名変換後期待値を返す
 Private Function ExpectedComplexSelectSql() As String
-    Dim resultText As String
-
-    AppendLine resultText, "select"
-    AppendLine resultText, "    users." & UserIdText() & ","
-    AppendLine resultText, "    case"
-    AppendLine resultText, "        when sum(orders." & AmountText() & ") > 100000 then 'VIP'"
-    AppendLine resultText, "        when sum(orders." & AmountText() & ") between 50000 and 100000 then 'STANDARD'"
-    AppendLine resultText, "        else " & StatusText()
-    AppendLine resultText, "    end as rank_name"
-    AppendLine resultText, "from"
-    AppendLine resultText, "    users"
-    AppendLine resultText, "    left join orders"
-    AppendLine resultText, "        on users." & UserIdText() & " = orders." & OrderUserIdText()
-    AppendLine resultText, "where"
-    AppendLine resultText, "    ("
-    AppendLine resultText, "        (" & StatusText() & " = 'ACTIVE' and orders." & AmountText() & " > 0)"
-    AppendLine resultText, "        or ("
-    AppendLine resultText, "            " & StatusText() & " = 'PENDING'"
-    AppendLine resultText, "            and exists ("
-    AppendLine resultText, "                select"
-    AppendLine resultText, "                    1"
-    AppendLine resultText, "                from"
-    AppendLine resultText, "                    order_items"
-    AppendLine resultText, "                where"
-    AppendLine resultText, "                    order_items." & DetailOrderIdText() & " = orders." & OrderIdText()
-    AppendLine resultText, "                    and order_items." & QuantityText() & " > 1"
-    AppendLine resultText, "            )"
-    AppendLine resultText, "        )"
-    AppendLine resultText, "    )"
-    AppendLine resultText, "group by"
-    AppendLine resultText, "    users." & UserIdText() & ","
-    AppendLine resultText, "    " & StatusText()
-    AppendLine resultText, "having"
-    AppendLine resultText, "    count(orders." & OrderIdText() & ") > 0"
-    AppendLine resultText, "order by"
-    AppendLine resultText, "    users." & UserIdText() & ","
-    AppendLine resultText, "    " & StatusText()
-
-    ExpectedComplexSelectSql = resultText
+    ExpectedComplexSelectSql = ConvertFixtureSql(InputComplexSelectSql())
 End Function
 
+' 自己結合の和名変換後期待値を返す
 Private Function ExpectedSelfJoinSql() As String
-    ExpectedSelfJoinSql = Lines( _
-        "select", _
-        "    users." & UserIdText() & ",", _
-        "    users." & FullNameText() & ",", _
-        "    manager." & FullNameText() & " as manager_name", _
-        "from", _
-        "    users", _
-        "    inner join users manager", _
-        "        on users." & ManagerIdText() & " = manager." & UserIdText(), _
-        "where", _
-        "    manager." & StatusText() & " = " & StatusText(), _
-        "order by", _
-        "    manager." & FullNameText())
+    ExpectedSelfJoinSql = ConvertFixtureSql(InputSelfJoinSql())
 End Function
 
+' SELECT-INTOの和名変換後期待値を返す
 Private Function ExpectedSelectIntoSql() As String
-    ExpectedSelectIntoSql = Lines( _
-        "select", _
-        "    users." & UserIdText() & ",", _
-        "    users." & MailText() & ",", _
-        "    " & StatusText(), _
-        "into", _
-        "    user_export", _
-        "from", _
-        "    users", _
-        "where", _
-        "    users." & MailText() & " is not null", _
-        "    and " & StatusText() & " in ('ACTIVE', 'LOCKED')", _
-        "order by", _
-        "    users." & MailText())
+    ExpectedSelectIntoSql = ConvertFixtureSql(InputSelectIntoSql())
 End Function
 
+' UPDATE-FROMの和名変換後期待値を返す
 Private Function ExpectedUpdateFromSql() As String
-    ExpectedUpdateFromSql = Lines( _
-        "update", _
-        "    orders", _
-        "set", _
-        "    orders." & AmountText() & " = orders." & AmountText() & " * 1.1,", _
-        "    " & UpdatedAtText() & " = CURRENT_TIMESTAMP", _
-        "from", _
-        "    orders", _
-        "    inner join users", _
-        "        on orders." & OrderUserIdText() & " = users." & UserIdText(), _
-        "where", _
-        "    (users." & MailText() & " like :domain or " & StatusText() & " = 'PENDING')", _
-        "    and (", _
-        "        orders." & AmountText() & " > 1000", _
-        "        or exists (", _
-        "            select", _
-        "                1", _
-        "            from", _
-        "                order_items", _
-        "            where", _
-        "                order_items." & DetailOrderIdText() & " = orders." & OrderIdText(), _
-        "        )", _
-        "    )")
+    ExpectedUpdateFromSql = ConvertFixtureSql(InputUpdateFromSql())
 End Function
 
+' DELETE EXISTSの和名変換後期待値を返す
 Private Function ExpectedDeleteExistsSql() As String
-    ExpectedDeleteExistsSql = Lines( _
-        "delete from", _
-        "    order_items", _
-        "where", _
-        "    exists (", _
-        "        select", _
-        "            1", _
-        "        from", _
-        "            orders", _
-        "        where", _
-        "            orders." & OrderIdText() & " = order_items." & DetailOrderIdText(), _
-        "            and (" & StatusText() & " = 'CANCELLED' or orders." & AmountText() & " <= 0)", _
-        "    )")
+    ExpectedDeleteExistsSql = ConvertFixtureSql(InputDeleteExistsSql())
 End Function
 
-Private Function Lines(ParamArray values() As Variant) As String
-    Dim index As Long
-    Dim resultText As String
-
-    For index = LBound(values) To UBound(values)
-        If index > LBound(values) Then
-            resultText = resultText & vbLf
-        End If
-        resultText = resultText & CStr(values(index))
-    Next index
-
-    Lines = resultText
-End Function
-
-Private Sub AppendLine(ByRef resultText As String, ByVal lineText As String)
+' A5M2のCRLFをExcelセル内改行に合わせてLFで保持
+Private Sub AppendA5M2Line(ByRef resultText As String, ByVal lineText As String)
     If Len(resultText) > 0 Then
         resultText = resultText & vbLf
     End If
     resultText = resultText & lineText
 End Sub
+
+' A5M2出力末尾の改行を付与
+Private Function FinishA5M2Sql(ByVal resultText As String) As String
+    FinishA5M2Sql = resultText & vbLf
+End Function
+
+' A5M2が付ける行末スペースを明示
+Private Function TS(ByVal lineText As String) As String
+    TS = lineText & " "
+End Function
+
+' 入力SQLから和名変換後の期待値を作成
+Private Function ConvertFixtureSql(ByVal sourceText As String) As String
+    Dim resultText As String
+
+    resultText = sourceText
+    resultText = Replace(resultText, "order_items.product_id", "order_items." & ProductIdText(), , , vbBinaryCompare)
+    resultText = Replace(resultText, "order_items.quantity", "order_items." & QuantityText(), , , vbBinaryCompare)
+    resultText = Replace(resultText, "order_items.order_id", "order_items." & DetailOrderIdText(), , , vbBinaryCompare)
+    resultText = Replace(resultText, "users.manager_id", "users." & ManagerIdText(), , , vbBinaryCompare)
+    resultText = Replace(resultText, "manager.user_id", "manager." & UserIdText(), , , vbBinaryCompare)
+    resultText = Replace(resultText, "manager.status", "manager." & StatusText(), , , vbBinaryCompare)
+    resultText = Replace(resultText, "manager.name", "manager." & FullNameText(), , , vbBinaryCompare)
+    resultText = Replace(resultText, "orders.order_id", "orders." & OrderIdText(), , , vbBinaryCompare)
+    resultText = Replace(resultText, "orders.user_id", "orders." & OrderUserIdText(), , , vbBinaryCompare)
+    resultText = Replace(resultText, "orders.amount", "orders." & AmountText(), , , vbBinaryCompare)
+    resultText = Replace(resultText, "users.user_id", "users." & UserIdText(), , , vbBinaryCompare)
+    resultText = Replace(resultText, "users.email", "users." & MailText(), , , vbBinaryCompare)
+    resultText = Replace(resultText, "users.name", "users." & FullNameText(), , , vbBinaryCompare)
+    resultText = ReplaceStandaloneFixture(resultText, "created_at", CreatedAtText())
+    resultText = ReplaceStandaloneFixture(resultText, "updated_at", UpdatedAtText())
+    resultText = ReplaceStandaloneFixture(resultText, "status", StatusText())
+
+    ConvertFixtureSql = resultText
+End Function
+
+' 単体フィールド定義を識別子単位で置換
+Private Function ReplaceStandaloneFixture(ByVal sourceText As String, ByVal searchText As String, ByVal replacementText As String) As String
+    Dim re As Object
+    Dim matches As Object
+    Dim matchItem As Object
+    Dim resultText As String
+    Dim index As Long
+    Dim prefix As String
+    Dim suffix As String
+
+    Set re = CreateObject("VBScript.RegExp")
+    re.Global = True
+    re.IgnoreCase = False
+    re.Pattern = "(^|[^A-Za-z0-9_.])" & searchText & "([^A-Za-z0-9_.]|$)"
+
+    Set matches = re.Execute(sourceText)
+    resultText = sourceText
+    For index = matches.Count - 1 To 0 Step -1
+        Set matchItem = matches.Item(index)
+        prefix = CStr(matchItem.SubMatches(0))
+        suffix = CStr(matchItem.SubMatches(1))
+        resultText = Left$(resultText, matchItem.FirstIndex) _
+            & prefix & replacementText & suffix _
+            & Mid$(resultText, matchItem.FirstIndex + matchItem.Length + 1)
+    Next index
+
+    ReplaceStandaloneFixture = resultText
+End Function
 
 Private Sub PutDefinition(ByVal ws As Worksheet, ByVal rowNumber As Long, ByVal tableId As String, ByVal tableName As String, ByVal fieldId As String, ByVal fieldName As String)
     ws.Cells(rowNumber, 1).Value = tableId
