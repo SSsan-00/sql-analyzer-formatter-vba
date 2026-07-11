@@ -24,7 +24,7 @@ Public Sub SetupWorkbook()
     Set wsOutput = ResolveOrCreateSheet(OutputSheetName(), OutputSheetName(), 3)
 
     RestoreHeaders wsRef, wsSql
-    ApplyOutputSheetView wsOutput
+    ApplyOutputSheetLayout wsOutput
     InstallButtons wsSql
 End Sub
 
@@ -387,9 +387,23 @@ Private Function GetOutputSheet() As Worksheet
     Dim ws As Worksheet
 
     Set ws = ResolveOrCreateSheet(OutputSheetName(), OutputSheetName(), 3)
-    ApplyOutputSheetView ws
+    ApplyOutputSheetLayout ws
     Set GetOutputSheet = ws
 End Function
+
+' アウトプットシートの表示と書式を適用
+Private Sub ApplyOutputSheetLayout(ByVal ws As Worksheet)
+    ApplyOutputSheetFont ws
+    ApplyOutputSheetView ws
+End Sub
+
+' アウトプットシートの既定フォントを設定
+Private Sub ApplyOutputSheetFont(ByVal ws As Worksheet)
+    With ws.Cells.Font
+        .Name = OutputFontName()
+        .Size = OutputFontSize()
+    End With
+End Sub
 
 ' アウトプットシートの表示設定を適用
 Private Sub ApplyOutputSheetView(ByVal ws As Worksheet)
@@ -694,6 +708,16 @@ End Function
 ' アウトプットシート名を取得
 Private Function OutputSheetName() As String
     OutputSheetName = W(&H30A2, &H30A6, &H30C8, &H30D7, &H30C3, &H30C8)
+End Function
+
+' アウトプットシートのフォント名を取得
+Private Function OutputFontName() As String
+    OutputFontName = W(&HFF2D, &HFF33, &H20, &H30B4, &H30B7, &H30C3, &H30AF)
+End Function
+
+' アウトプットシートのフォントサイズを取得
+Private Function OutputFontSize() As Long
+    OutputFontSize = 9
 End Function
 
 ' 所属テーブルID見出しを取得

@@ -34,6 +34,7 @@ Public Sub SetupWorkbook_CreatesOutputSheet()
 
     AssertWorksheetExists OutputSheetName()
     AssertOutputSheetGridlinesHidden
+    AssertOutputSheetFont
 End Sub
 
 '@TestMethod("AnalyzeQueries")
@@ -909,6 +910,26 @@ Private Sub AssertOutputSheetGridlinesHidden()
     previousSheet.Activate
 End Sub
 
+Private Sub AssertOutputSheetFont()
+    Dim wsOutput As Worksheet
+
+    Set wsOutput = ThisWorkbook.Worksheets(OutputSheetName())
+
+    AssertCellFont wsOutput.Cells(1, 1), OutputFontName(), 9
+    AssertCellFont wsOutput.Cells(20, 5), OutputFontName(), 9
+End Sub
+
+Private Sub AssertCellFont(ByVal cell As Range, ByVal expectedName As String, ByVal expectedSize As Double)
+    If CStr(cell.Font.Name) <> expectedName Then
+        Fail cell.Worksheet.Name & "!" & cell.Address(False, False) & _
+            " font expected=[" & expectedName & "] actual=[" & CStr(cell.Font.Name) & "]"
+    End If
+    If CDbl(cell.Font.Size) <> expectedSize Then
+        Fail cell.Worksheet.Name & "!" & cell.Address(False, False) & _
+            " font size expected=[" & CStr(expectedSize) & "] actual=[" & CStr(cell.Font.Size) & "]"
+    End If
+End Sub
+
 Private Sub AssertCellValue(ByVal cell As Range, ByVal expected As String)
     Dim actual As String
 
@@ -945,6 +966,10 @@ End Function
 
 Private Function OutputSheetName() As String
     OutputSheetName = W(&H30A2, &H30A6, &H30C8, &H30D7, &H30C3, &H30C8)
+End Function
+
+Private Function OutputFontName() As String
+    OutputFontName = W(&HFF2D, &HFF33, &H20, &H30B4, &H30B7, &H30C3, &H30AF)
 End Function
 
 Private Function UserTableText() As String
