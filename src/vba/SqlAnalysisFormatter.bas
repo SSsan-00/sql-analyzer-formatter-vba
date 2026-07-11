@@ -24,6 +24,7 @@ Public Sub SetupWorkbook()
     Set wsOutput = ResolveOrCreateSheet(OutputSheetName(), OutputSheetName(), 3)
 
     RestoreHeaders wsRef, wsSql
+    ApplyOutputSheetView wsOutput
     InstallButtons wsSql
 End Sub
 
@@ -383,8 +384,44 @@ End Function
 
 ' アウトプットシートを取得
 Private Function GetOutputSheet() As Worksheet
-    Set GetOutputSheet = ResolveOrCreateSheet(OutputSheetName(), OutputSheetName(), 3)
+    Dim ws As Worksheet
+
+    Set ws = ResolveOrCreateSheet(OutputSheetName(), OutputSheetName(), 3)
+    ApplyOutputSheetView ws
+    Set GetOutputSheet = ws
 End Function
+
+' アウトプットシートの表示設定を適用
+Private Sub ApplyOutputSheetView(ByVal ws As Worksheet)
+    Dim previousSheet As Object
+    Dim previousScreenUpdating As Boolean
+    Dim errorNumber As Long
+    Dim errorSource As String
+    Dim errorDescription As String
+
+    On Error GoTo RestoreApplicationState
+    previousScreenUpdating = Application.ScreenUpdating
+    Set previousSheet = ActiveSheet
+    Application.ScreenUpdating = False
+
+    ' 目盛り線はウィンドウ単位のため、一時的に対象シートを表示
+    ws.Activate
+    ActiveWindow.DisplayGridlines = False
+
+RestoreApplicationState:
+    errorNumber = Err.Number
+    errorSource = Err.Source
+    errorDescription = Err.Description
+
+    On Error Resume Next
+    previousSheet.Activate
+    Application.ScreenUpdating = previousScreenUpdating
+    On Error GoTo 0
+
+    If errorNumber <> 0 Then
+        Err.Raise errorNumber, errorSource, errorDescription
+    End If
+End Sub
 
 ' 既存名または旧シート名からシートを解決し、なければ作成
 Private Function ResolveOrCreateSheet(ByVal primaryName As String, ByVal fallbackName As String, ByVal desiredIndex As Long) As Worksheet

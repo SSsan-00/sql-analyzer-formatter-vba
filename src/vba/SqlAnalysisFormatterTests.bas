@@ -33,6 +33,7 @@ Public Sub SetupWorkbook_CreatesOutputSheet()
     SetupWorkbook
 
     AssertWorksheetExists OutputSheetName()
+    AssertOutputSheetGridlinesHidden
 End Sub
 
 '@TestMethod("AnalyzeQueries")
@@ -891,6 +892,21 @@ Private Sub AssertWorksheetExists(ByVal sheetName As String)
     If ws Is Nothing Then
         Fail "Worksheet not found: " & sheetName
     End If
+End Sub
+
+Private Sub AssertOutputSheetGridlinesHidden()
+    Dim previousSheet As Object
+    Dim wsOutput As Worksheet
+
+    Set previousSheet = ActiveSheet
+    Set wsOutput = ThisWorkbook.Worksheets(OutputSheetName())
+
+    ' 目盛り線の表示状態は対象シートを表示して確認
+    wsOutput.Activate
+    If ActiveWindow.DisplayGridlines Then
+        Fail "Output sheet gridlines should be hidden."
+    End If
+    previousSheet.Activate
 End Sub
 
 Private Sub AssertCellValue(ByVal cell As Range, ByVal expected As String)
