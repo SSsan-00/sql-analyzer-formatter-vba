@@ -14,6 +14,7 @@ Public Sub RunAllSqlAnalysisFormatterTests(Optional ByVal showMessage As Boolean
 
     SetupWorkbook_CreatesOutputSheet
     AnalyzeQueries_ConvertsCrudFixtures
+    AnalyzeQueries_ConvertsTsqlFunctionFixtures
 
     If showMessage Then
         MsgBox "SqlAnalysisFormatter tests passed.", vbInformation
@@ -62,6 +63,46 @@ Public Sub AnalyzeQueries_ConvertsCrudFixtures()
         Array("orders." & OrderIdText(), "order_items." & DetailOrderIdText(), StatusText(), "orders." & AmountText())
 End Sub
 
+'@TestMethod("AnalyzeQueries")
+Public Sub AnalyzeQueries_ConvertsTsqlFunctionFixtures()
+    Dim wsSql As Worksheet
+
+    ArrangeTsqlFunctionFixtures
+    AnalyzeQueries False
+
+    Set wsSql = ThisWorkbook.Worksheets(SqlSheetName())
+    AssertAnalyzeRow wsSql, 2, ExpectedTsqlTrimFromSql(), _
+        Array("users." & FullNameText(), "users." & UserIdText())
+    AssertAnalyzeRow wsSql, 3, ExpectedTsqlInSql(), _
+        Array("users." & UserIdText(), StatusText(), "orders." & OrderUserIdText(), "orders." & AmountText())
+    AssertAnalyzeRow wsSql, 4, ExpectedTsqlCoalesceSql(), _
+        Array("users." & UserIdText(), "users." & MailText(), "users." & FullNameText())
+    AssertAnalyzeRow wsSql, 5, ExpectedTsqlFormatSql(), _
+        Array("orders." & OrderIdText(), "orders." & AmountText(), CreatedAtText())
+    AssertAnalyzeRow wsSql, 6, ExpectedTsqlWithSql(), _
+        Array("users." & UserIdText(), StatusText())
+    AssertAnalyzeRow wsSql, 7, ExpectedTsqlCastSql(), _
+        Array("users." & UserIdText(), "orders." & AmountText(), CreatedAtText(), UpdatedAtText(), StatusText(), "orders." & OrderUserIdText())
+    AssertAnalyzeRow wsSql, 8, ExpectedTsqlIsNullSql(), _
+        Array("users." & UserIdText(), "users." & MailText(), StatusText())
+    AssertAnalyzeRow wsSql, 9, ExpectedTsqlSubstringSql(), _
+        Array("users." & UserIdText(), "users." & MailText())
+    AssertAnalyzeRow wsSql, 10, ExpectedTsqlRoundSql(), _
+        Array("orders." & OrderIdText(), "orders." & AmountText())
+    AssertAnalyzeRow wsSql, 11, ExpectedTsqlSumSql(), _
+        Array("orders." & OrderUserIdText(), "orders." & AmountText())
+    AssertAnalyzeRow wsSql, 12, ExpectedTsqlReplaceSql(), _
+        Array("users." & UserIdText(), "users." & MailText())
+    AssertAnalyzeRow wsSql, 13, ExpectedTsqlDateAddSql(), _
+        Array("orders." & OrderIdText(), CreatedAtText())
+    AssertAnalyzeRow wsSql, 14, ExpectedTsqlDateDiffSql(), _
+        Array("orders." & OrderIdText(), CreatedAtText(), UpdatedAtText())
+    AssertAnalyzeRow wsSql, 15, ExpectedTsqlCountSql(), _
+        Array("users." & UserIdText(), "orders." & OrderIdText(), "orders." & OrderUserIdText())
+    AssertAnalyzeRow wsSql, 16, ExpectedTsqlExistsSql(), _
+        Array("users." & UserIdText(), "orders." & OrderUserIdText(), "orders." & AmountText())
+End Sub
+
 ' CRUDを含む解析テスト用データを作成
 Private Sub ArrangeCrudFixtures()
     Dim wsRef As Worksheet
@@ -79,6 +120,25 @@ Private Sub ArrangeCrudFixtures()
 
     SeedReferenceDefinitions wsRef
     SeedCrudQueries wsSql
+End Sub
+
+' T-SQL関数サンプルの解析テスト用データを作成
+Private Sub ArrangeTsqlFunctionFixtures()
+    Dim wsRef As Worksheet
+    Dim wsSql As Worksheet
+    Dim wsOutput As Worksheet
+
+    SetupWorkbook
+    Set wsRef = ThisWorkbook.Worksheets(ReferenceSheetName())
+    Set wsSql = ThisWorkbook.Worksheets(SqlSheetName())
+    Set wsOutput = ThisWorkbook.Worksheets(OutputSheetName())
+
+    wsRef.Range("A2:D200").ClearContents
+    wsSql.Range("A2:Z200").ClearContents
+    wsOutput.Cells.ClearContents
+
+    SeedReferenceDefinitions wsRef
+    SeedTsqlFunctionQueries wsSql
 End Sub
 
 ' CRUDサンプルで使う変換定義を投入
@@ -112,6 +172,25 @@ Private Sub SeedCrudQueries(ByVal ws As Worksheet)
     ws.Cells(8, COL_SQL).Value = InputSelectIntoSql()
     ws.Cells(9, COL_SQL).Value = InputUpdateFromSql()
     ws.Cells(10, COL_SQL).Value = InputDeleteExistsSql()
+End Sub
+
+' T-SQLの主要関数・構文を独立した行へ投入
+Private Sub SeedTsqlFunctionQueries(ByVal ws As Worksheet)
+    ws.Cells(2, COL_SQL).Value = InputTsqlTrimFromSql()
+    ws.Cells(3, COL_SQL).Value = InputTsqlInSql()
+    ws.Cells(4, COL_SQL).Value = InputTsqlCoalesceSql()
+    ws.Cells(5, COL_SQL).Value = InputTsqlFormatSql()
+    ws.Cells(6, COL_SQL).Value = InputTsqlWithSql()
+    ws.Cells(7, COL_SQL).Value = InputTsqlCastSql()
+    ws.Cells(8, COL_SQL).Value = InputTsqlIsNullSql()
+    ws.Cells(9, COL_SQL).Value = InputTsqlSubstringSql()
+    ws.Cells(10, COL_SQL).Value = InputTsqlRoundSql()
+    ws.Cells(11, COL_SQL).Value = InputTsqlSumSql()
+    ws.Cells(12, COL_SQL).Value = InputTsqlReplaceSql()
+    ws.Cells(13, COL_SQL).Value = InputTsqlDateAddSql()
+    ws.Cells(14, COL_SQL).Value = InputTsqlDateDiffSql()
+    ws.Cells(15, COL_SQL).Value = InputTsqlCountSql()
+    ws.Cells(16, COL_SQL).Value = InputTsqlExistsSql()
 End Sub
 
 ' A5M2で整形したSELECTの入力SQLを返す
@@ -322,6 +401,248 @@ Private Function InputDeleteExistsSql() As String
     InputDeleteExistsSql = FinishA5M2Sql(resultText)
 End Function
 
+' A5M2で整形したT-SQL TRIM FROMの入力SQLを返す
+Private Function InputTsqlTrimFromSql() As String
+    Dim resultText As String
+
+    AppendA5M2Line resultText, "select"
+    AppendA5M2Line resultText, TS("    trim('.' from users.name) as trimmed_name")
+    AppendA5M2Line resultText, "from"
+    AppendA5M2Line resultText, TS("    users")
+    AppendA5M2Line resultText, "where"
+    AppendA5M2Line resultText, "    users.user_id = @user_id"
+
+    InputTsqlTrimFromSql = FinishA5M2Sql(resultText)
+End Function
+
+' A5M2で整形したT-SQL INの入力SQLを返す
+Private Function InputTsqlInSql() As String
+    Dim resultText As String
+
+    AppendA5M2Line resultText, "select"
+    AppendA5M2Line resultText, "    users.user_id"
+    AppendA5M2Line resultText, TS("    , status")
+    AppendA5M2Line resultText, "from"
+    AppendA5M2Line resultText, TS("    users")
+    AppendA5M2Line resultText, "where"
+    AppendA5M2Line resultText, TS("    status in ('ACTIVE', 'LOCKED', 'PENDING')")
+    AppendA5M2Line resultText, TS("    and users.user_id in (")
+    AppendA5M2Line resultText, "        select"
+    AppendA5M2Line resultText, TS("            orders.user_id")
+    AppendA5M2Line resultText, "        from"
+    AppendA5M2Line resultText, TS("            orders")
+    AppendA5M2Line resultText, "        where"
+    AppendA5M2Line resultText, "            orders.amount > 0"
+    AppendA5M2Line resultText, "    )"
+
+    InputTsqlInSql = FinishA5M2Sql(resultText)
+End Function
+
+' A5M2で整形したT-SQL COALESCEの入力SQLを返す
+Private Function InputTsqlCoalesceSql() As String
+    Dim resultText As String
+
+    AppendA5M2Line resultText, "select"
+    AppendA5M2Line resultText, "    users.user_id"
+    AppendA5M2Line resultText, TS("    , coalesce(users.email, users.name, 'unknown') as contact_text")
+    AppendA5M2Line resultText, "from"
+    AppendA5M2Line resultText, "    users"
+
+    InputTsqlCoalesceSql = FinishA5M2Sql(resultText)
+End Function
+
+' A5M2で整形したT-SQL FORMATの入力SQLを返す
+Private Function InputTsqlFormatSql() As String
+    Dim resultText As String
+
+    AppendA5M2Line resultText, "select"
+    AppendA5M2Line resultText, "    orders.order_id"
+    AppendA5M2Line resultText, "    , format(orders.amount, 'N2', 'ja-JP') as amount_n2"
+    AppendA5M2Line resultText, "    , format(created_at, 'yyyy/MM/dd') as created_date"
+    AppendA5M2Line resultText, "    , format(created_at, 'yyyyMMddHHmmss') as created_stamp"
+    AppendA5M2Line resultText, TS("    , format(orders.amount, 'C', 'ja-JP') as amount_currency")
+    AppendA5M2Line resultText, "from"
+    AppendA5M2Line resultText, "    orders"
+
+    InputTsqlFormatSql = FinishA5M2Sql(resultText)
+End Function
+
+' A5M2で整形したT-SQL WITHの入力SQLを返す
+Private Function InputTsqlWithSql() As String
+    Dim resultText As String
+
+    AppendA5M2Line resultText, TS("with target_users as (")
+    AppendA5M2Line resultText, "    select"
+    AppendA5M2Line resultText, TS("        users.user_id")
+    AppendA5M2Line resultText, "    from"
+    AppendA5M2Line resultText, TS("        users")
+    AppendA5M2Line resultText, "    where"
+    AppendA5M2Line resultText, "        status = 'ACTIVE'"
+    AppendA5M2Line resultText, TS(")")
+    AppendA5M2Line resultText, "select"
+    AppendA5M2Line resultText, TS("    target_users.user_id")
+    AppendA5M2Line resultText, "from"
+    AppendA5M2Line resultText, "    target_users"
+
+    InputTsqlWithSql = FinishA5M2Sql(resultText)
+End Function
+
+' A5M2で整形したT-SQL CASTの入力SQLを返す
+Private Function InputTsqlCastSql() As String
+    Dim resultText As String
+
+    AppendA5M2Line resultText, "select"
+    AppendA5M2Line resultText, "    cast(users.user_id as int) as user_id_int"
+    AppendA5M2Line resultText, "    , cast(orders.amount as decimal (18, 2)) as amount_decimal"
+    AppendA5M2Line resultText, "    , cast(created_at as date) as created_date"
+    AppendA5M2Line resultText, "    , cast(updated_at as datetime2(3)) as updated_at_dt"
+    AppendA5M2Line resultText, TS("    , cast(status as nvarchar(20)) as status_text")
+    AppendA5M2Line resultText, "from"
+    AppendA5M2Line resultText, TS("    users")
+    AppendA5M2Line resultText, TS("    inner join orders")
+    AppendA5M2Line resultText, "        on users.user_id = orders.user_id"
+
+    InputTsqlCastSql = FinishA5M2Sql(resultText)
+End Function
+
+' A5M2で整形したT-SQL ISNULLの入力SQLを返す
+Private Function InputTsqlIsNullSql() As String
+    Dim resultText As String
+
+    AppendA5M2Line resultText, "select"
+    AppendA5M2Line resultText, "    users.user_id"
+    AppendA5M2Line resultText, "    , isnull(users.email, 'unknown') as email_text"
+    AppendA5M2Line resultText, TS("    , isnull(status, 'UNKNOWN') as status_text")
+    AppendA5M2Line resultText, "from"
+    AppendA5M2Line resultText, "    users"
+
+    InputTsqlIsNullSql = FinishA5M2Sql(resultText)
+End Function
+
+' A5M2で整形したT-SQL SUBSTRINGの入力SQLを返す
+Private Function InputTsqlSubstringSql() As String
+    Dim resultText As String
+
+    AppendA5M2Line resultText, "select"
+    AppendA5M2Line resultText, "    users.user_id"
+    AppendA5M2Line resultText, TS("    , substring(users.email, 1, 3) as email_prefix")
+    AppendA5M2Line resultText, "from"
+    AppendA5M2Line resultText, "    users"
+
+    InputTsqlSubstringSql = FinishA5M2Sql(resultText)
+End Function
+
+' A5M2で整形したT-SQL ROUNDの入力SQLを返す
+Private Function InputTsqlRoundSql() As String
+    Dim resultText As String
+
+    AppendA5M2Line resultText, "select"
+    AppendA5M2Line resultText, "    orders.order_id"
+    AppendA5M2Line resultText, "    , round(orders.amount, 0) as amount_round0"
+    AppendA5M2Line resultText, TS("    , round(orders.amount, 2, 1) as amount_truncate2")
+    AppendA5M2Line resultText, "from"
+    AppendA5M2Line resultText, "    orders"
+
+    InputTsqlRoundSql = FinishA5M2Sql(resultText)
+End Function
+
+' A5M2で整形したT-SQL SUMの入力SQLを返す
+Private Function InputTsqlSumSql() As String
+    Dim resultText As String
+
+    AppendA5M2Line resultText, "select"
+    AppendA5M2Line resultText, "    orders.user_id"
+    AppendA5M2Line resultText, TS("    , sum(orders.amount) as total_amount")
+    AppendA5M2Line resultText, "from"
+    AppendA5M2Line resultText, TS("    orders")
+    AppendA5M2Line resultText, "group by"
+    AppendA5M2Line resultText, TS("    orders.user_id")
+    AppendA5M2Line resultText, "having"
+    AppendA5M2Line resultText, "    sum(orders.amount) > 0"
+
+    InputTsqlSumSql = FinishA5M2Sql(resultText)
+End Function
+
+' A5M2で整形したT-SQL REPLACEの入力SQLを返す
+Private Function InputTsqlReplaceSql() As String
+    Dim resultText As String
+
+    AppendA5M2Line resultText, "select"
+    AppendA5M2Line resultText, "    users.user_id"
+    AppendA5M2Line resultText, TS("    , replace (users.email, '@old.example', '@new.example') as normalized_email")
+    AppendA5M2Line resultText, "from"
+    AppendA5M2Line resultText, "    users"
+
+    InputTsqlReplaceSql = FinishA5M2Sql(resultText)
+End Function
+
+' A5M2で整形したT-SQL DATEADDの入力SQLを返す
+Private Function InputTsqlDateAddSql() As String
+    Dim resultText As String
+
+    AppendA5M2Line resultText, "select"
+    AppendA5M2Line resultText, "    orders.order_id"
+    AppendA5M2Line resultText, "    , dateadd(day, 7, created_at) as due_date"
+    AppendA5M2Line resultText, TS("    , dateadd(month, 1, created_at) as next_month_date")
+    AppendA5M2Line resultText, "from"
+    AppendA5M2Line resultText, "    orders"
+
+    InputTsqlDateAddSql = FinishA5M2Sql(resultText)
+End Function
+
+' A5M2で整形したT-SQL DATEDIFFの入力SQLを返す
+Private Function InputTsqlDateDiffSql() As String
+    Dim resultText As String
+
+    AppendA5M2Line resultText, "select"
+    AppendA5M2Line resultText, "    orders.order_id"
+    AppendA5M2Line resultText, "    , datediff(day, created_at, updated_at) as elapsed_days"
+    AppendA5M2Line resultText, TS("    , datediff(minute, created_at, updated_at) as elapsed_minutes")
+    AppendA5M2Line resultText, "from"
+    AppendA5M2Line resultText, "    orders"
+
+    InputTsqlDateDiffSql = FinishA5M2Sql(resultText)
+End Function
+
+' A5M2で整形したT-SQL COUNTの入力SQLを返す
+Private Function InputTsqlCountSql() As String
+    Dim resultText As String
+
+    AppendA5M2Line resultText, "select"
+    AppendA5M2Line resultText, "    users.user_id"
+    AppendA5M2Line resultText, TS("    , count(orders.order_id) as order_count")
+    AppendA5M2Line resultText, "from"
+    AppendA5M2Line resultText, TS("    users")
+    AppendA5M2Line resultText, TS("    left join orders")
+    AppendA5M2Line resultText, TS("        on users.user_id = orders.user_id")
+    AppendA5M2Line resultText, "group by"
+    AppendA5M2Line resultText, "    users.user_id"
+
+    InputTsqlCountSql = FinishA5M2Sql(resultText)
+End Function
+
+' A5M2で整形したT-SQL EXISTSの入力SQLを返す
+Private Function InputTsqlExistsSql() As String
+    Dim resultText As String
+
+    AppendA5M2Line resultText, "select"
+    AppendA5M2Line resultText, TS("    users.user_id")
+    AppendA5M2Line resultText, "from"
+    AppendA5M2Line resultText, TS("    users")
+    AppendA5M2Line resultText, "where"
+    AppendA5M2Line resultText, TS("    exists (")
+    AppendA5M2Line resultText, "        select"
+    AppendA5M2Line resultText, TS("            1")
+    AppendA5M2Line resultText, "        from"
+    AppendA5M2Line resultText, TS("            orders")
+    AppendA5M2Line resultText, "        where"
+    AppendA5M2Line resultText, TS("            orders.user_id = users.user_id")
+    AppendA5M2Line resultText, "            and orders.amount > 0"
+    AppendA5M2Line resultText, "    )"
+
+    InputTsqlExistsSql = FinishA5M2Sql(resultText)
+End Function
+
 ' SELECTの和名変換後期待値を返す
 Private Function ExpectedSelectSql() As String
     ExpectedSelectSql = ConvertFixtureSql(InputSelectSql())
@@ -367,6 +688,81 @@ Private Function ExpectedDeleteExistsSql() As String
     ExpectedDeleteExistsSql = ConvertFixtureSql(InputDeleteExistsSql())
 End Function
 
+' T-SQL TRIM FROMの和名変換後期待値を返す
+Private Function ExpectedTsqlTrimFromSql() As String
+    ExpectedTsqlTrimFromSql = ConvertFixtureSql(InputTsqlTrimFromSql())
+End Function
+
+' T-SQL INの和名変換後期待値を返す
+Private Function ExpectedTsqlInSql() As String
+    ExpectedTsqlInSql = ConvertFixtureSql(InputTsqlInSql())
+End Function
+
+' T-SQL COALESCEの和名変換後期待値を返す
+Private Function ExpectedTsqlCoalesceSql() As String
+    ExpectedTsqlCoalesceSql = ConvertFixtureSql(InputTsqlCoalesceSql())
+End Function
+
+' T-SQL FORMATの和名変換後期待値を返す
+Private Function ExpectedTsqlFormatSql() As String
+    ExpectedTsqlFormatSql = ConvertFixtureSql(InputTsqlFormatSql())
+End Function
+
+' T-SQL WITHの和名変換後期待値を返す
+Private Function ExpectedTsqlWithSql() As String
+    ExpectedTsqlWithSql = ConvertFixtureSql(InputTsqlWithSql())
+End Function
+
+' T-SQL CASTの和名変換後期待値を返す
+Private Function ExpectedTsqlCastSql() As String
+    ExpectedTsqlCastSql = ConvertFixtureSql(InputTsqlCastSql())
+End Function
+
+' T-SQL ISNULLの和名変換後期待値を返す
+Private Function ExpectedTsqlIsNullSql() As String
+    ExpectedTsqlIsNullSql = ConvertFixtureSql(InputTsqlIsNullSql())
+End Function
+
+' T-SQL SUBSTRINGの和名変換後期待値を返す
+Private Function ExpectedTsqlSubstringSql() As String
+    ExpectedTsqlSubstringSql = ConvertFixtureSql(InputTsqlSubstringSql())
+End Function
+
+' T-SQL ROUNDの和名変換後期待値を返す
+Private Function ExpectedTsqlRoundSql() As String
+    ExpectedTsqlRoundSql = ConvertFixtureSql(InputTsqlRoundSql())
+End Function
+
+' T-SQL SUMの和名変換後期待値を返す
+Private Function ExpectedTsqlSumSql() As String
+    ExpectedTsqlSumSql = ConvertFixtureSql(InputTsqlSumSql())
+End Function
+
+' T-SQL REPLACEの和名変換後期待値を返す
+Private Function ExpectedTsqlReplaceSql() As String
+    ExpectedTsqlReplaceSql = ConvertFixtureSql(InputTsqlReplaceSql())
+End Function
+
+' T-SQL DATEADDの和名変換後期待値を返す
+Private Function ExpectedTsqlDateAddSql() As String
+    ExpectedTsqlDateAddSql = ConvertFixtureSql(InputTsqlDateAddSql())
+End Function
+
+' T-SQL DATEDIFFの和名変換後期待値を返す
+Private Function ExpectedTsqlDateDiffSql() As String
+    ExpectedTsqlDateDiffSql = ConvertFixtureSql(InputTsqlDateDiffSql())
+End Function
+
+' T-SQL COUNTの和名変換後期待値を返す
+Private Function ExpectedTsqlCountSql() As String
+    ExpectedTsqlCountSql = ConvertFixtureSql(InputTsqlCountSql())
+End Function
+
+' T-SQL EXISTSの和名変換後期待値を返す
+Private Function ExpectedTsqlExistsSql() As String
+    ExpectedTsqlExistsSql = ConvertFixtureSql(InputTsqlExistsSql())
+End Function
+
 ' A5M2のCRLFをExcelセル内改行に合わせてLFで保持
 Private Sub AppendA5M2Line(ByRef resultText As String, ByVal lineText As String)
     If Len(resultText) > 0 Then
@@ -390,19 +786,19 @@ Private Function ConvertFixtureSql(ByVal sourceText As String) As String
     Dim resultText As String
 
     resultText = sourceText
-    resultText = Replace(resultText, "order_items.product_id", "order_items." & ProductIdText(), , , vbBinaryCompare)
-    resultText = Replace(resultText, "order_items.quantity", "order_items." & QuantityText(), , , vbBinaryCompare)
-    resultText = Replace(resultText, "order_items.order_id", "order_items." & DetailOrderIdText(), , , vbBinaryCompare)
-    resultText = Replace(resultText, "users.manager_id", "users." & ManagerIdText(), , , vbBinaryCompare)
-    resultText = Replace(resultText, "manager.user_id", "manager." & UserIdText(), , , vbBinaryCompare)
-    resultText = Replace(resultText, "manager.status", "manager." & StatusText(), , , vbBinaryCompare)
-    resultText = Replace(resultText, "manager.name", "manager." & FullNameText(), , , vbBinaryCompare)
-    resultText = Replace(resultText, "orders.order_id", "orders." & OrderIdText(), , , vbBinaryCompare)
-    resultText = Replace(resultText, "orders.user_id", "orders." & OrderUserIdText(), , , vbBinaryCompare)
-    resultText = Replace(resultText, "orders.amount", "orders." & AmountText(), , , vbBinaryCompare)
-    resultText = Replace(resultText, "users.user_id", "users." & UserIdText(), , , vbBinaryCompare)
-    resultText = Replace(resultText, "users.email", "users." & MailText(), , , vbBinaryCompare)
-    resultText = Replace(resultText, "users.name", "users." & FullNameText(), , , vbBinaryCompare)
+    resultText = ReplaceQualifiedFixture(resultText, "order_items.product_id", "order_items." & ProductIdText())
+    resultText = ReplaceQualifiedFixture(resultText, "order_items.quantity", "order_items." & QuantityText())
+    resultText = ReplaceQualifiedFixture(resultText, "order_items.order_id", "order_items." & DetailOrderIdText())
+    resultText = ReplaceQualifiedFixture(resultText, "users.manager_id", "users." & ManagerIdText())
+    resultText = ReplaceQualifiedFixture(resultText, "manager.user_id", "manager." & UserIdText())
+    resultText = ReplaceQualifiedFixture(resultText, "manager.status", "manager." & StatusText())
+    resultText = ReplaceQualifiedFixture(resultText, "manager.name", "manager." & FullNameText())
+    resultText = ReplaceQualifiedFixture(resultText, "orders.order_id", "orders." & OrderIdText())
+    resultText = ReplaceQualifiedFixture(resultText, "orders.user_id", "orders." & OrderUserIdText())
+    resultText = ReplaceQualifiedFixture(resultText, "orders.amount", "orders." & AmountText())
+    resultText = ReplaceQualifiedFixture(resultText, "users.user_id", "users." & UserIdText())
+    resultText = ReplaceQualifiedFixture(resultText, "users.email", "users." & MailText())
+    resultText = ReplaceQualifiedFixture(resultText, "users.name", "users." & FullNameText())
     resultText = ReplaceStandaloneFixture(resultText, "created_at", CreatedAtText())
     resultText = ReplaceStandaloneFixture(resultText, "updated_at", UpdatedAtText())
     resultText = ReplaceStandaloneFixture(resultText, "status", StatusText())
@@ -410,8 +806,18 @@ Private Function ConvertFixtureSql(ByVal sourceText As String) As String
     ConvertFixtureSql = resultText
 End Function
 
+' テーブル修飾付き定義を識別子単位で置換
+Private Function ReplaceQualifiedFixture(ByVal sourceText As String, ByVal searchText As String, ByVal replacementText As String) As String
+    ReplaceQualifiedFixture = ReplaceRegexFixture(sourceText, "(^|[^A-Za-z0-9_])" & EscapeRegexFixture(searchText) & "([^A-Za-z0-9_]|$)", replacementText)
+End Function
+
 ' 単体フィールド定義を識別子単位で置換
 Private Function ReplaceStandaloneFixture(ByVal sourceText As String, ByVal searchText As String, ByVal replacementText As String) As String
+    ReplaceStandaloneFixture = ReplaceRegexFixture(sourceText, "(^|[^A-Za-z0-9_.])" & EscapeRegexFixture(searchText) & "([^A-Za-z0-9_.]|$)", replacementText)
+End Function
+
+' 前後の区切り文字を残して正規表現置換
+Private Function ReplaceRegexFixture(ByVal sourceText As String, ByVal patternText As String, ByVal replacementText As String) As String
     Dim re As Object
     Dim matches As Object
     Dim matchItem As Object
@@ -423,7 +829,7 @@ Private Function ReplaceStandaloneFixture(ByVal sourceText As String, ByVal sear
     Set re = CreateObject("VBScript.RegExp")
     re.Global = True
     re.IgnoreCase = False
-    re.Pattern = "(^|[^A-Za-z0-9_.])" & searchText & "([^A-Za-z0-9_.]|$)"
+    re.Pattern = patternText
 
     Set matches = re.Execute(sourceText)
     resultText = sourceText
@@ -436,7 +842,24 @@ Private Function ReplaceStandaloneFixture(ByVal sourceText As String, ByVal sear
             & Mid$(resultText, matchItem.FirstIndex + matchItem.Length + 1)
     Next index
 
-    ReplaceStandaloneFixture = resultText
+    ReplaceRegexFixture = resultText
+End Function
+
+' テスト期待値用の正規表現リテラルをエスケープ
+Private Function EscapeRegexFixture(ByVal value As String) As String
+    Dim index As Long
+    Dim resultText As String
+    Dim currentChar As String
+
+    For index = 1 To Len(value)
+        currentChar = Mid$(value, index, 1)
+        If InStr(1, "\.^$|?*+()[]{}", currentChar, vbBinaryCompare) > 0 Then
+            resultText = resultText & "\"
+        End If
+        resultText = resultText & currentChar
+    Next index
+
+    EscapeRegexFixture = resultText
 End Function
 
 Private Sub PutDefinition(ByVal ws As Worksheet, ByVal rowNumber As Long, ByVal tableId As String, ByVal tableName As String, ByVal fieldId As String, ByVal fieldName As String)

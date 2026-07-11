@@ -499,6 +499,552 @@ where
 | 3 | 状態 |
 | 4 | orders.金額 |
 
+## T-SQL独立ケース
+
+T-SQLで使用する関数・構文ごとに、A5M2 `Ctrl+q` 整形後の入力と和名変換後を独立した行として検証します。
+`FORMAT` は複数のフォーマット指定子、`CAST` は複数の型を同一ケース内にまとめています。
+
+### TRIM FROM
+
+入力（A5M2 Ctrl+Q 整形後）
+
+```sql
+select
+    trim('.' from users.name) as trimmed_name
+from
+    users
+where
+    users.user_id = @user_id
+```
+
+期待する和名変換後
+
+```sql
+select
+    trim('.' from users.氏名) as trimmed_name
+from
+    users
+where
+    users.ユーザーID = @user_id
+```
+
+変換内容:
+
+| 順序 | 変換後 |
+| --- | --- |
+| 1 | users.氏名 |
+| 2 | users.ユーザーID |
+
+### IN
+
+入力（A5M2 Ctrl+Q 整形後）
+
+```sql
+select
+    users.user_id
+    , status
+from
+    users
+where
+    status in ('ACTIVE', 'LOCKED', 'PENDING')
+    and users.user_id in (
+        select
+            orders.user_id
+        from
+            orders
+        where
+            orders.amount > 0
+    )
+```
+
+期待する和名変換後
+
+```sql
+select
+    users.ユーザーID
+    , 状態
+from
+    users
+where
+    状態 in ('ACTIVE', 'LOCKED', 'PENDING')
+    and users.ユーザーID in (
+        select
+            orders.注文ユーザーID
+        from
+            orders
+        where
+            orders.金額 > 0
+    )
+```
+
+変換内容:
+
+| 順序 | 変換後 |
+| --- | --- |
+| 1 | users.ユーザーID |
+| 2 | 状態 |
+| 3 | orders.注文ユーザーID |
+| 4 | orders.金額 |
+
+### COALESCE
+
+入力（A5M2 Ctrl+Q 整形後）
+
+```sql
+select
+    users.user_id
+    , coalesce(users.email, users.name, 'unknown') as contact_text
+from
+    users
+```
+
+期待する和名変換後
+
+```sql
+select
+    users.ユーザーID
+    , coalesce(users.メール, users.氏名, 'unknown') as contact_text
+from
+    users
+```
+
+変換内容:
+
+| 順序 | 変換後 |
+| --- | --- |
+| 1 | users.ユーザーID |
+| 2 | users.メール |
+| 3 | users.氏名 |
+
+### FORMAT
+
+入力（A5M2 Ctrl+Q 整形後）
+
+```sql
+select
+    orders.order_id
+    , format(orders.amount, 'N2', 'ja-JP') as amount_n2
+    , format(created_at, 'yyyy/MM/dd') as created_date
+    , format(created_at, 'yyyyMMddHHmmss') as created_stamp
+    , format(orders.amount, 'C', 'ja-JP') as amount_currency
+from
+    orders
+```
+
+期待する和名変換後
+
+```sql
+select
+    orders.注文ID
+    , format(orders.金額, 'N2', 'ja-JP') as amount_n2
+    , format(作成日時, 'yyyy/MM/dd') as created_date
+    , format(作成日時, 'yyyyMMddHHmmss') as created_stamp
+    , format(orders.金額, 'C', 'ja-JP') as amount_currency
+from
+    orders
+```
+
+変換内容:
+
+| 順序 | 変換後 |
+| --- | --- |
+| 1 | orders.注文ID |
+| 2 | orders.金額 |
+| 3 | 作成日時 |
+
+### WITH
+
+入力（A5M2 Ctrl+Q 整形後）
+
+```sql
+with target_users as (
+    select
+        users.user_id
+    from
+        users
+    where
+        status = 'ACTIVE'
+)
+select
+    target_users.user_id
+from
+    target_users
+```
+
+期待する和名変換後
+
+```sql
+with target_users as (
+    select
+        users.ユーザーID
+    from
+        users
+    where
+        状態 = 'ACTIVE'
+)
+select
+    target_users.user_id
+from
+    target_users
+```
+
+変換内容:
+
+| 順序 | 変換後 |
+| --- | --- |
+| 1 | users.ユーザーID |
+| 2 | 状態 |
+
+### CAST
+
+入力（A5M2 Ctrl+Q 整形後）
+
+```sql
+select
+    cast(users.user_id as int) as user_id_int
+    , cast(orders.amount as decimal (18, 2)) as amount_decimal
+    , cast(created_at as date) as created_date
+    , cast(updated_at as datetime2(3)) as updated_at_dt
+    , cast(status as nvarchar(20)) as status_text
+from
+    users
+    inner join orders
+        on users.user_id = orders.user_id
+```
+
+期待する和名変換後
+
+```sql
+select
+    cast(users.ユーザーID as int) as user_id_int
+    , cast(orders.金額 as decimal (18, 2)) as amount_decimal
+    , cast(作成日時 as date) as created_date
+    , cast(更新日時 as datetime2(3)) as updated_at_dt
+    , cast(状態 as nvarchar(20)) as status_text
+from
+    users
+    inner join orders
+        on users.ユーザーID = orders.注文ユーザーID
+```
+
+変換内容:
+
+| 順序 | 変換後 |
+| --- | --- |
+| 1 | users.ユーザーID |
+| 2 | orders.金額 |
+| 3 | 作成日時 |
+| 4 | 更新日時 |
+| 5 | 状態 |
+| 6 | orders.注文ユーザーID |
+
+### ISNULL
+
+入力（A5M2 Ctrl+Q 整形後）
+
+```sql
+select
+    users.user_id
+    , isnull(users.email, 'unknown') as email_text
+    , isnull(status, 'UNKNOWN') as status_text
+from
+    users
+```
+
+期待する和名変換後
+
+```sql
+select
+    users.ユーザーID
+    , isnull(users.メール, 'unknown') as email_text
+    , isnull(状態, 'UNKNOWN') as status_text
+from
+    users
+```
+
+変換内容:
+
+| 順序 | 変換後 |
+| --- | --- |
+| 1 | users.ユーザーID |
+| 2 | users.メール |
+| 3 | 状態 |
+
+### SUBSTRING
+
+入力（A5M2 Ctrl+Q 整形後）
+
+```sql
+select
+    users.user_id
+    , substring(users.email, 1, 3) as email_prefix
+from
+    users
+```
+
+期待する和名変換後
+
+```sql
+select
+    users.ユーザーID
+    , substring(users.メール, 1, 3) as email_prefix
+from
+    users
+```
+
+変換内容:
+
+| 順序 | 変換後 |
+| --- | --- |
+| 1 | users.ユーザーID |
+| 2 | users.メール |
+
+### ROUND
+
+入力（A5M2 Ctrl+Q 整形後）
+
+```sql
+select
+    orders.order_id
+    , round(orders.amount, 0) as amount_round0
+    , round(orders.amount, 2, 1) as amount_truncate2
+from
+    orders
+```
+
+期待する和名変換後
+
+```sql
+select
+    orders.注文ID
+    , round(orders.金額, 0) as amount_round0
+    , round(orders.金額, 2, 1) as amount_truncate2
+from
+    orders
+```
+
+変換内容:
+
+| 順序 | 変換後 |
+| --- | --- |
+| 1 | orders.注文ID |
+| 2 | orders.金額 |
+
+### SUM
+
+入力（A5M2 Ctrl+Q 整形後）
+
+```sql
+select
+    orders.user_id
+    , sum(orders.amount) as total_amount
+from
+    orders
+group by
+    orders.user_id
+having
+    sum(orders.amount) > 0
+```
+
+期待する和名変換後
+
+```sql
+select
+    orders.注文ユーザーID
+    , sum(orders.金額) as total_amount
+from
+    orders
+group by
+    orders.注文ユーザーID
+having
+    sum(orders.金額) > 0
+```
+
+変換内容:
+
+| 順序 | 変換後 |
+| --- | --- |
+| 1 | orders.注文ユーザーID |
+| 2 | orders.金額 |
+
+### REPLACE
+
+入力（A5M2 Ctrl+Q 整形後）
+
+```sql
+select
+    users.user_id
+    , replace (users.email, '@old.example', '@new.example') as normalized_email
+from
+    users
+```
+
+期待する和名変換後
+
+```sql
+select
+    users.ユーザーID
+    , replace (users.メール, '@old.example', '@new.example') as normalized_email
+from
+    users
+```
+
+変換内容:
+
+| 順序 | 変換後 |
+| --- | --- |
+| 1 | users.ユーザーID |
+| 2 | users.メール |
+
+### DATEADD
+
+入力（A5M2 Ctrl+Q 整形後）
+
+```sql
+select
+    orders.order_id
+    , dateadd(day, 7, created_at) as due_date
+    , dateadd(month, 1, created_at) as next_month_date
+from
+    orders
+```
+
+期待する和名変換後
+
+```sql
+select
+    orders.注文ID
+    , dateadd(day, 7, 作成日時) as due_date
+    , dateadd(month, 1, 作成日時) as next_month_date
+from
+    orders
+```
+
+変換内容:
+
+| 順序 | 変換後 |
+| --- | --- |
+| 1 | orders.注文ID |
+| 2 | 作成日時 |
+
+### DATEDIFF
+
+入力（A5M2 Ctrl+Q 整形後）
+
+```sql
+select
+    orders.order_id
+    , datediff(day, created_at, updated_at) as elapsed_days
+    , datediff(minute, created_at, updated_at) as elapsed_minutes
+from
+    orders
+```
+
+期待する和名変換後
+
+```sql
+select
+    orders.注文ID
+    , datediff(day, 作成日時, 更新日時) as elapsed_days
+    , datediff(minute, 作成日時, 更新日時) as elapsed_minutes
+from
+    orders
+```
+
+変換内容:
+
+| 順序 | 変換後 |
+| --- | --- |
+| 1 | orders.注文ID |
+| 2 | 作成日時 |
+| 3 | 更新日時 |
+
+### COUNT
+
+入力（A5M2 Ctrl+Q 整形後）
+
+```sql
+select
+    users.user_id
+    , count(orders.order_id) as order_count
+from
+    users
+    left join orders
+        on users.user_id = orders.user_id
+group by
+    users.user_id
+```
+
+期待する和名変換後
+
+```sql
+select
+    users.ユーザーID
+    , count(orders.注文ID) as order_count
+from
+    users
+    left join orders
+        on users.ユーザーID = orders.注文ユーザーID
+group by
+    users.ユーザーID
+```
+
+変換内容:
+
+| 順序 | 変換後 |
+| --- | --- |
+| 1 | users.ユーザーID |
+| 2 | orders.注文ID |
+| 3 | orders.注文ユーザーID |
+
+### EXISTS
+
+入力（A5M2 Ctrl+Q 整形後）
+
+```sql
+select
+    users.user_id
+from
+    users
+where
+    exists (
+        select
+            1
+        from
+            orders
+        where
+            orders.user_id = users.user_id
+            and orders.amount > 0
+    )
+```
+
+期待する和名変換後
+
+```sql
+select
+    users.ユーザーID
+from
+    users
+where
+    exists (
+        select
+            1
+        from
+            orders
+        where
+            orders.注文ユーザーID = users.ユーザーID
+            and orders.金額 > 0
+    )
+```
+
+変換内容:
+
+| 順序 | 変換後 |
+| --- | --- |
+| 1 | users.ユーザーID |
+| 2 | orders.注文ユーザーID |
+| 3 | orders.金額 |
+
 ## 出力シート
 
 将来の整形出力先シート名は `アウトプット` です。現在のテストではシートの存在とSQL解析結果を検証し、具体的な列構成は次の仕様検討で決定します。
