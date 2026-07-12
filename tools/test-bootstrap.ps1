@@ -37,6 +37,17 @@ function Assert-NoBootstrapSource {
     }
 }
 
+function Assert-NoBootstrapSourceReference {
+    param([string]$BootstrapPath)
+
+    $sourceText = [IO.File]::ReadAllText($BootstrapPath, [Text.UTF8Encoding]::new($false))
+    foreach ($blockedText in @('build-bootstrap.ps1', 'test-bootstrap.ps1')) {
+        if ($sourceText.Contains($blockedText)) {
+            throw "Bootstrap source must not include bootstrap-related source reference: $blockedText"
+        }
+    }
+}
+
 function Invoke-Bootstrap {
     param(
         [string]$BootstrapPath,
@@ -71,6 +82,7 @@ try {
     Assert-PathMissing (Join-Path $userTarget 'tests')
     Assert-PathMissing (Join-Path $userTarget 'tools')
     Assert-NoBootstrapSource $userTarget
+    Assert-NoBootstrapSourceReference $UserBootstrapPath
     Assert-ParserStarts (Join-Path $userTarget 'SqlAnalysisFormatter.Parser.exe')
 
     Invoke-Bootstrap $DeveloperBootstrapPath $developerTarget
@@ -85,7 +97,10 @@ try {
     Assert-PathExists (Join-Path $developerTarget 'tests\CRUD_TEST_CASES.md')
     Assert-PathExists (Join-Path $developerTarget 'SqlAnalysisFormatter.sln')
     Assert-PathMissing (Join-Path $developerTarget 'SqlAnalysisFormatter.xlsm')
+    Assert-PathMissing (Join-Path $developerTarget 'tools\build-bootstrap.ps1')
+    Assert-PathMissing (Join-Path $developerTarget 'tools\test-bootstrap.ps1')
     Assert-NoBootstrapSource $developerTarget
+    Assert-NoBootstrapSourceReference $DeveloperBootstrapPath
     Assert-ParserStarts (Join-Path $developerTarget 'SqlAnalysisFormatter.Parser.exe')
 
     Write-Output 'Bootstrap test passed.'

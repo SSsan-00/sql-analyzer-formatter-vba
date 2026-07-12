@@ -65,6 +65,23 @@ function New-Artifact {
     }
 }
 
+function Test-BootstrapSourcePath {
+    param([string]$Path)
+
+    $fileName = [IO.Path]::GetFileName($Path)
+    $fileName -like '*bootstrap*.ps1'
+}
+
+function Assert-NoBootstrapSourceArtifact {
+    param([System.Collections.Generic.List[object]]$Artifacts)
+
+    foreach ($artifact in $Artifacts) {
+        if ((Test-BootstrapSourcePath $artifact.SourcePath) -or (Test-BootstrapSourcePath $artifact.TargetPath)) {
+            throw "Bootstrap-related source must not be included: $($artifact.TargetPath)"
+        }
+    }
+}
+
 function Add-TreeArtifacts {
     param(
         [System.Collections.Generic.List[object]]$Artifacts,
@@ -117,6 +134,7 @@ $artifacts = if ($Audience -eq 'Developer') {
 } else {
     Get-UserArtifacts
 }
+Assert-NoBootstrapSourceArtifact $artifacts
 
 $fileBlocks = New-Object System.Collections.Generic.List[string]
 foreach ($artifact in $artifacts) {
