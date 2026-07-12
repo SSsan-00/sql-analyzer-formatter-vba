@@ -56,10 +56,20 @@ WITH 句やサブクエリを含む場合は、内側のサブクエリ、外側
 ### マクロ付きブックを使う場合
 
 1. `SqlAnalysisFormatter.xlsm` をダウンロードします。
-2. Excel で開き、必要に応じてマクロを有効化します。
-3. `変換定義` シートに変換定義を入力します。
-4. `SQL解析` シートの A 列 2 行目以降に SQL を入力します。
-5. `解析` ボタンを押して B 列と C 列以降の出力を確認します。
+2. `SqlAnalysisFormatter.Parser.exe` がある場合は、ブックと同じフォルダへ配置します。
+3. Excel で開き、必要に応じてマクロを有効化します。
+4. `変換定義` シートに変換定義を入力します。
+5. `SQL解析` シートの A 列 2 行目以降に SQL を入力します。
+6. `解析` ボタンを押して B 列と C 列以降の出力を確認します。
+
+`SqlAnalysisFormatter.Parser.exe` が存在する場合は ScriptDom による AST 解析を使います。
+存在しない場合や parser 実行に失敗した場合は、VBA 内蔵の暫定解析に自動で戻ります。
+
+### ローカルBootstrapを使う場合
+
+GitHubへ通信せずに導入するための貼り付け用 bootstrap は、開発者が生成します。
+生成された bootstrap をローカルの `.ps1` ファイルへ貼り付けて実行すると、成果物フォルダへ `SqlAnalysisFormatter.xlsm`、`SqlAnalysisFormatter.Parser.exe`、`README.md` を展開します。
+展開後の成果物フォルダには bootstrap 自身のソースを含めません。
 
 ### `.bas` から導入する場合
 
@@ -88,7 +98,40 @@ Rubberduckを使わない場合は、次のスクリプトを実行します。
 powershell -ExecutionPolicy Bypass -File tools/run-vba-tests.ps1
 ```
 
+parser exe 経由も含めて確認する場合は、先に parser を publish してから次を実行します。
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools/publish-parser.ps1
+powershell -ExecutionPolicy Bypass -File tools/run-vba-tests.ps1 -ParserExePath dist/parser/SqlAnalysisFormatter.Parser.exe
+```
+
 このスクリプトは一時コピーしたブックに本体モジュールとテストモジュールを取り込み、`RunAllSqlAnalysisFormatterTests` を実行します。
 保存済みの `SqlAnalysisFormatter.xlsm` にはテストモジュールを残しません。
 
 CRUDテストケースの内容は `tests/CRUD_TEST_CASES.md` にまとめています。
+
+### C# parser
+
+T-SQL の AST 解析には `tools/SqlAnalysisFormatter.Parser` を使います。
+対象フレームワークは `.NET 8.0` です。
+問題が出た場合のみ、`.NET 9.0` 以降への更新を検討します。
+
+```powershell
+dotnet test SqlAnalysisFormatter.sln
+powershell -ExecutionPolicy Bypass -File tools/publish-parser.ps1
+```
+
+publish 結果は `dist/parser/SqlAnalysisFormatter.Parser.exe` です。
+単一 exe、self-contained、win-x64 として出力します。
+
+### Bootstrap生成
+
+貼り付け用 bootstrap は次のコマンドで生成します。
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools/build-bootstrap.ps1
+powershell -ExecutionPolicy Bypass -File tools/test-bootstrap.ps1
+```
+
+生成先は `dist/bootstrap/SqlAnalysisFormatter.bootstrap.ps1` です。
+この生成物はサイズが大きいため、通常のソース管理対象には含めません。
