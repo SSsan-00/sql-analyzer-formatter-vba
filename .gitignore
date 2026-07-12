@@ -5,6 +5,10 @@
 .vscode/
 .idea/
 
+# .NET build outputs
+bin/
+obj/
+
 # OS metadata
 Thumbs.db
 Desktop.ini
