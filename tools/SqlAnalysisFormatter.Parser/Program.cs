@@ -25,9 +25,11 @@ internal static class Program
         }
 
         string sql;
+        CliOptions options;
         try
         {
-            sql = await ReadSqlAsync(args);
+            options = ParseOptions(args);
+            sql = await ReadSqlAsync(options);
         }
         catch (ArgumentException ex)
         {
@@ -36,25 +38,77 @@ internal static class Program
         }
 
         var result = TsqlAstParser.Parse(sql);
-        var json = JsonSerializer.Serialize(result, JsonOptions());
-        Console.WriteLine(json);
+        await WriteResultAsync(result, options);
         return 0;
     }
 
-    private static async Task<string> ReadSqlAsync(string[] args)
+    private static CliOptions ParseOptions(string[] args)
     {
-        if (args.Length == 0)
+        var options = new CliOptions();
+        for (var index = 0; index < args.Length; index++)
+        {
+            switch (args[index])
+            {
+                case "--input":
+                    options.InputPath = ReadOptionValue(args, ref index, "--input");
+                    break;
+                case "--output":
+                    options.OutputPath = ReadOptionValue(args, ref index, "--output");
+                    break;
+                case "--format":
+                    options.Format = ReadOptionValue(args, ref index, "--format");
+                    break;
+                default:
+                    throw new ArgumentException("Usage: SqlAnalysisFormatter.Parser.exe [--input <path>] [--output <path>] [--format json|vba-blocks] [--version]");
+            }
+        }
+
+        if (options.Format is not "json" and not "vba-blocks")
+        {
+            throw new ArgumentException("Unknown format: " + options.Format);
+        }
+
+        return options;
+    }
+
+    private static string ReadOptionValue(string[] args, ref int index, string optionName)
+    {
+        if (index + 1 >= args.Length)
+        {
+            throw new ArgumentException("Missing value for " + optionName);
+        }
+
+        index++;
+        return args[index];
+    }
+
+    private static async Task<string> ReadSqlAsync(CliOptions options)
+    {
+        if (options.InputPath.Length == 0)
         {
             using var reader = new StreamReader(Console.OpenStandardInput(), Encoding.UTF8);
             return await reader.ReadToEndAsync();
         }
 
-        if (args.Length == 2 && args[0] == "--input")
+        return await File.ReadAllTextAsync(options.InputPath, Encoding.UTF8);
+    }
+
+    private static async Task WriteResultAsync(ParseResult result, CliOptions options)
+    {
+        var outputText = options.Format == "vba-blocks"
+            ? ParserOutputFormatter.ToVbaBlocks(result)
+            : JsonSerializer.Serialize(result, JsonOptions());
+
+        if (options.OutputPath.Length == 0)
         {
-            return await File.ReadAllTextAsync(args[1], Encoding.UTF8);
+            Console.WriteLine(outputText);
+            return;
         }
 
-        throw new ArgumentException("Usage: SqlAnalysisFormatter.Parser.exe [--input <path>] [--version]");
+        var encoding = options.Format == "vba-blocks"
+            ? Encoding.Unicode
+            : new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
+        await File.WriteAllTextAsync(options.OutputPath, outputText, encoding);
     }
 
     private static JsonSerializerOptions JsonOptions()
@@ -65,5 +119,14 @@ internal static class Program
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
             WriteIndented = false
         };
+    }
+
+    private sealed class CliOptions
+    {
+        public string InputPath { get; set; } = string.Empty;
+
+        public string OutputPath { get; set; } = string.Empty;
+
+        public string Format { get; set; } = "json";
     }
 }
