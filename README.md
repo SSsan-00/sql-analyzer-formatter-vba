@@ -68,7 +68,8 @@ WITH 句やサブクエリを含む場合は、内側のサブクエリ、外側
 ### ローカルBootstrapを使う場合
 
 GitHubへ通信せずに導入するための貼り付け用 bootstrap は、開発者が生成します。
-生成された bootstrap をローカルの `.ps1` ファイルへ貼り付けて実行すると、成果物フォルダへ `SqlAnalysisFormatter.xlsm`、`SqlAnalysisFormatter.Parser.exe`、`README.md` を展開します。
+ユーザー向け bootstrap は、成果物フォルダへ `SqlAnalysisFormatter.bas`、`SqlAnalysisFormatter.Parser.exe`、利用者向け `README.md` だけを展開します。
+開発者向け bootstrap は、それに加えてプロダクションコード、テストコード、開発者向けドキュメントを展開します。
 展開後の成果物フォルダには bootstrap 自身のソースを含めません。
 
 ### `.bas` から導入する場合
@@ -129,9 +130,10 @@ publish 結果は `dist/parser/SqlAnalysisFormatter.Parser.exe` です。
 貼り付け用 bootstrap は次のコマンドで生成します。
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File tools/build-bootstrap.ps1
+powershell -ExecutionPolicy Bypass -File tools/build-bootstrap.ps1 -Audience User
+powershell -ExecutionPolicy Bypass -File tools/build-bootstrap.ps1 -Audience Developer
 powershell -ExecutionPolicy Bypass -File tools/test-bootstrap.ps1
 ```
 
-生成先は `dist/bootstrap/SqlAnalysisFormatter.bootstrap.ps1` です。
+生成先は `dist/bootstrap/SqlAnalysisFormatter.user.bootstrap.ps1` と `dist/bootstrap/SqlAnalysisFormatter.developer.bootstrap.ps1` です。
 この生成物はサイズが大きいため、通常のソース管理対象には含めません。
