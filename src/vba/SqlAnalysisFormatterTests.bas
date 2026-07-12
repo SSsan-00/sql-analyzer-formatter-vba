@@ -15,6 +15,8 @@ Public Sub RunAllSqlAnalysisFormatterTests(Optional ByVal showMessage As Boolean
     SetupWorkbook_CreatesOutputSheet
     AnalyzeQueries_ConvertsCrudFixtures
     AnalyzeQueries_ConvertsTsqlFunctionFixtures
+    AnalyzeQueries_WritesWithSubqueriesInsideOut
+    AnalyzeQueries_WritesUnsupportedQueryAsIs
     ClearData_ClearsOutputSheet
 
     If showMessage Then
@@ -106,6 +108,35 @@ Public Sub AnalyzeQueries_ConvertsTsqlFunctionFixtures()
         Array("users." & UserIdText(), "orders." & OrderUserIdText(), "orders." & AmountText())
 End Sub
 
+'@TestMethod("AnalyzeQueries")
+Public Sub AnalyzeQueries_WritesWithSubqueriesInsideOut()
+    Dim wsSql As Worksheet
+    Dim wsOutput As Worksheet
+
+    ArrangeOutputOrderingFixtures
+    AnalyzeQueries False
+
+    Set wsSql = ThisWorkbook.Worksheets(SqlSheetName())
+    Set wsOutput = ThisWorkbook.Worksheets(OutputSheetName())
+    AssertCellValue wsSql.Cells(2, COL_RESULT), ConvertFixtureSql(InputOutputNestedWithSql())
+    AssertCellValue wsOutput.Cells(1, 1), ExpectedOutputNestedInnerSubquerySql()
+    AssertCellValue wsOutput.Cells(2, 1), ExpectedOutputNestedOuterSubquerySql()
+    AssertCellValue wsOutput.Cells(3, 1), ExpectedOutputNestedWholeSql()
+    AssertCellValue wsOutput.Cells(4, 1), ""
+End Sub
+
+'@TestMethod("AnalyzeQueries")
+Public Sub AnalyzeQueries_WritesUnsupportedQueryAsIs()
+    Dim wsOutput As Worksheet
+
+    ArrangeUnsupportedOutputFixture
+    AnalyzeQueries False
+
+    Set wsOutput = ThisWorkbook.Worksheets(OutputSheetName())
+    AssertCellValue wsOutput.Cells(1, 1), ExpectedOutputUnsupportedSql()
+    AssertCellValue wsOutput.Cells(2, 1), ""
+End Sub
+
 '@TestMethod("ClearData")
 Public Sub ClearData_ClearsOutputSheet()
     Dim wsOutput As Worksheet
@@ -120,6 +151,44 @@ Public Sub ClearData_ClearsOutputSheet()
     AssertCellValue wsOutput.Cells(1, 1), ""
     AssertCellValue wsOutput.Cells(3, 2), ""
     AssertOutputSheetFont
+End Sub
+
+' アウトプット順序テスト用データを作成
+Private Sub ArrangeOutputOrderingFixtures()
+    Dim wsRef As Worksheet
+    Dim wsSql As Worksheet
+    Dim wsOutput As Worksheet
+
+    SetupWorkbook
+    Set wsRef = ThisWorkbook.Worksheets(ReferenceSheetName())
+    Set wsSql = ThisWorkbook.Worksheets(SqlSheetName())
+    Set wsOutput = ThisWorkbook.Worksheets(OutputSheetName())
+
+    wsRef.Range("A2:D200").ClearContents
+    wsSql.Range("A2:Z200").ClearContents
+    wsOutput.Cells.ClearContents
+
+    SeedReferenceDefinitions wsRef
+    wsSql.Cells(2, COL_SQL).Value = InputOutputNestedWithSql()
+End Sub
+
+' 未対応クエリのアウトプットテスト用データを作成
+Private Sub ArrangeUnsupportedOutputFixture()
+    Dim wsRef As Worksheet
+    Dim wsSql As Worksheet
+    Dim wsOutput As Worksheet
+
+    SetupWorkbook
+    Set wsRef = ThisWorkbook.Worksheets(ReferenceSheetName())
+    Set wsSql = ThisWorkbook.Worksheets(SqlSheetName())
+    Set wsOutput = ThisWorkbook.Worksheets(OutputSheetName())
+
+    wsRef.Range("A2:D200").ClearContents
+    wsSql.Range("A2:Z200").ClearContents
+    wsOutput.Cells.ClearContents
+
+    SeedReferenceDefinitions wsRef
+    wsSql.Cells(2, COL_SQL).Value = InputUnsupportedSql()
 End Sub
 
 ' CRUDを含む解析テスト用データを作成
@@ -662,6 +731,85 @@ Private Function InputTsqlExistsSql() As String
     InputTsqlExistsSql = FinishA5M2Sql(resultText)
 End Function
 
+' WITHとネストしたサブクエリを含むアウトプット順序確認用SQLを返す
+Private Function InputOutputNestedWithSql() As String
+    Dim resultText As String
+
+    AppendA5M2Line resultText, TS("with high_value_orders as (")
+    AppendA5M2Line resultText, "    select"
+    AppendA5M2Line resultText, "        orders.user_id"
+    AppendA5M2Line resultText, "        , orders.amount"
+    AppendA5M2Line resultText, "    from"
+    AppendA5M2Line resultText, TS("        orders")
+    AppendA5M2Line resultText, "    where"
+    AppendA5M2Line resultText, "        orders.amount > 1000"
+    AppendA5M2Line resultText, TS("        and exists (")
+    AppendA5M2Line resultText, "            select"
+    AppendA5M2Line resultText, TS("                1")
+    AppendA5M2Line resultText, "            from"
+    AppendA5M2Line resultText, TS("                order_items")
+    AppendA5M2Line resultText, "            where"
+    AppendA5M2Line resultText, "                order_items.order_id = orders.order_id"
+    AppendA5M2Line resultText, "        )"
+    AppendA5M2Line resultText, TS(")")
+    AppendA5M2Line resultText, "select"
+    AppendA5M2Line resultText, "    users.user_id"
+    AppendA5M2Line resultText, "    , high_value_orders.amount"
+    AppendA5M2Line resultText, "from"
+    AppendA5M2Line resultText, TS("    users")
+    AppendA5M2Line resultText, TS("    inner join high_value_orders")
+    AppendA5M2Line resultText, "        on high_value_orders.user_id = users.user_id"
+
+    InputOutputNestedWithSql = FinishA5M2Sql(resultText)
+End Function
+
+' ネスト内側のサブクエリ期待値用SQLを返す
+Private Function InputOutputNestedInnerSubquerySql() As String
+    Dim resultText As String
+
+    AppendA5M2Line resultText, "select"
+    AppendA5M2Line resultText, TS("                1")
+    AppendA5M2Line resultText, "            from"
+    AppendA5M2Line resultText, TS("                order_items")
+    AppendA5M2Line resultText, "            where"
+    AppendA5M2Line resultText, "                order_items.order_id = orders.order_id"
+
+    InputOutputNestedInnerSubquerySql = FinishA5M2Sql(resultText)
+End Function
+
+' ネスト外側のサブクエリ期待値用SQLを返す
+Private Function InputOutputNestedOuterSubquerySql() As String
+    Dim resultText As String
+
+    AppendA5M2Line resultText, "select"
+    AppendA5M2Line resultText, "        orders.user_id"
+    AppendA5M2Line resultText, "        , orders.amount"
+    AppendA5M2Line resultText, "    from"
+    AppendA5M2Line resultText, TS("        orders")
+    AppendA5M2Line resultText, "    where"
+    AppendA5M2Line resultText, "        orders.amount > 1000"
+    AppendA5M2Line resultText, TS("        and exists (")
+    AppendA5M2Line resultText, "            select"
+    AppendA5M2Line resultText, TS("                1")
+    AppendA5M2Line resultText, "            from"
+    AppendA5M2Line resultText, TS("                order_items")
+    AppendA5M2Line resultText, "            where"
+    AppendA5M2Line resultText, "                order_items.order_id = orders.order_id"
+    AppendA5M2Line resultText, "        )"
+
+    InputOutputNestedOuterSubquerySql = FinishA5M2Sql(resultText)
+End Function
+
+' 未対応クエリのアウトプット期待値用SQLを返す
+Private Function InputUnsupportedSql() As String
+    Dim resultText As String
+
+    AppendA5M2Line resultText, "exec dbo.refresh_user_summary"
+    AppendA5M2Line resultText, "    @target_date = '2026-07-12'"
+
+    InputUnsupportedSql = FinishA5M2Sql(resultText)
+End Function
+
 ' SELECTの和名変換後期待値を返す
 Private Function ExpectedSelectSql() As String
     ExpectedSelectSql = ConvertFixtureSql(InputSelectSql())
@@ -782,6 +930,26 @@ Private Function ExpectedTsqlExistsSql() As String
     ExpectedTsqlExistsSql = ConvertFixtureSql(InputTsqlExistsSql())
 End Function
 
+' 内側サブクエリのアウトプット期待値を返す
+Private Function ExpectedOutputNestedInnerSubquerySql() As String
+    ExpectedOutputNestedInnerSubquerySql = TrimFixtureSql(ConvertFixtureSql(InputOutputNestedInnerSubquerySql()))
+End Function
+
+' 外側サブクエリのアウトプット期待値を返す
+Private Function ExpectedOutputNestedOuterSubquerySql() As String
+    ExpectedOutputNestedOuterSubquerySql = TrimFixtureSql(ConvertFixtureSql(InputOutputNestedOuterSubquerySql()))
+End Function
+
+' WITHを含むクエリ全体のアウトプット期待値を返す
+Private Function ExpectedOutputNestedWholeSql() As String
+    ExpectedOutputNestedWholeSql = TrimFixtureSql(ConvertFixtureSql(InputOutputNestedWithSql()))
+End Function
+
+' 未対応クエリのアウトプット期待値を返す
+Private Function ExpectedOutputUnsupportedSql() As String
+    ExpectedOutputUnsupportedSql = TrimFixtureSql(ConvertFixtureSql(InputUnsupportedSql()))
+End Function
+
 ' A5M2のCRLFをExcelセル内改行に合わせてLFで保持
 Private Sub AppendA5M2Line(ByRef resultText As String, ByVal lineText As String)
     If Len(resultText) > 0 Then
@@ -798,6 +966,32 @@ End Function
 ' A5M2が付ける行末スペースを明示
 Private Function TS(ByVal lineText As String) As String
     TS = lineText & " "
+End Function
+
+' アウトプット期待値の前後空白を除去
+Private Function TrimFixtureSql(ByVal sourceText As String) As String
+    Dim startIndex As Long
+    Dim endIndex As Long
+
+    startIndex = 1
+    Do While startIndex <= Len(sourceText)
+        If Not IsFixtureWhitespace(Mid$(sourceText, startIndex, 1)) Then Exit Do
+        startIndex = startIndex + 1
+    Loop
+
+    endIndex = Len(sourceText)
+    Do While endIndex >= startIndex
+        If Not IsFixtureWhitespace(Mid$(sourceText, endIndex, 1)) Then Exit Do
+        endIndex = endIndex - 1
+    Loop
+
+    If endIndex >= startIndex Then
+        TrimFixtureSql = Mid$(sourceText, startIndex, endIndex - startIndex + 1)
+    End If
+End Function
+
+Private Function IsFixtureWhitespace(ByVal value As String) As Boolean
+    IsFixtureWhitespace = (value = " " Or value = vbTab Or value = vbCr Or value = vbLf)
 End Function
 
 ' 入力SQLから和名変換後の期待値を作成

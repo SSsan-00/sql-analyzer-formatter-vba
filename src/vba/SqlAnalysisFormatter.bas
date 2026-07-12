@@ -32,11 +32,13 @@ End Sub
 Public Sub AnalyzeQueries(Optional ByVal showMessage As Boolean = True)
     Dim wsRef As Worksheet
     Dim wsSql As Worksheet
+    Dim wsOutput As Worksheet
     Dim qualifiedMap As Object
     Dim standaloneMap As Object
     Dim qualifiedKeys As Variant
     Dim standaloneKeys As Variant
     Dim lastRow As Long
+    Dim outputRow As Long
     Dim rowNumber As Long
     Dim sourceText As String
     Dim convertedText As String
@@ -44,6 +46,7 @@ Public Sub AnalyzeQueries(Optional ByVal showMessage As Boolean = True)
 
     Set wsRef = GetReferenceSheet()
     Set wsSql = GetSqlSheet()
+    Set wsOutput = GetOutputSheet()
     Set qualifiedMap = CreateTextDictionary()
     Set standaloneMap = CreateTextDictionary()
 
@@ -61,6 +64,8 @@ Public Sub AnalyzeQueries(Optional ByVal showMessage As Boolean = True)
 
     lastRow = LastUsedRowInColumn(wsSql, COL_SQL)
     ClearAnalyzeOutput wsSql, lastRow
+    ClearOutputSheet wsOutput
+    outputRow = 1
 
     For rowNumber = 2 To lastRow
         sourceText = CStr(wsSql.Cells(rowNumber, COL_SQL).Value)
@@ -69,6 +74,7 @@ Public Sub AnalyzeQueries(Optional ByVal showMessage As Boolean = True)
             convertedText = ApplyMappings(sourceText, qualifiedMap, qualifiedKeys, standaloneMap, standaloneKeys, replacementValues)
             wsSql.Cells(rowNumber, COL_RESULT).Value = convertedText
             WriteReplacementValues wsSql, rowNumber, replacementValues
+            outputRow = WriteOutputQueryBlocks(wsOutput, outputRow, convertedText)
         End If
     Next rowNumber
 
@@ -579,6 +585,200 @@ Private Sub WriteReplacementValues(ByVal wsSql As Worksheet, ByVal rowNumber As 
         wsSql.Cells(rowNumber, COL_REPLACEMENT + index).Value = CStr(keys(index))
     Next index
 End Sub
+
+' アウトプットシートへクエリブロックを順に出力
+Private Function WriteOutputQueryBlocks(ByVal wsOutput As Worksheet, ByVal startRow As Long, ByVal queryText As String) As Long
+    Dim blocks As Collection
+    Dim blockText As Variant
+    Dim rowNumber As Long
+
+    Set blocks = BuildOutputQueryBlocks(queryText)
+    rowNumber = startRow
+    For Each blockText In blocks
+        wsOutput.Cells(rowNumber, 1).Value = CStr(blockText)
+        rowNumber = rowNumber + 1
+    Next blockText
+
+    WriteOutputQueryBlocks = rowNumber
+End Function
+
+' サブクエリを内側から並べ、最後にクエリ全体を追加
+Private Function BuildOutputQueryBlocks(ByVal queryText As String) As Collection
+    Dim blocks As Collection
+
+    Set blocks = New Collection
+    CollectSubqueryBlocks queryText, blocks
+    blocks.Add NormalizeOutputQueryBlock(queryText)
+
+    Set BuildOutputQueryBlocks = blocks
+End Function
+
+' 括弧内のSELECT/WITHをサブクエリとして収集
+Private Sub CollectSubqueryBlocks(ByVal queryText As String, ByVal blocks As Collection)
+    Dim index As Long
+    Dim closingIndex As Long
+    Dim blockText As String
+    Dim normalizedBlock As String
+    Dim currentChar As String
+
+    index = 1
+    Do While index <= Len(queryText)
+        currentChar = Mid$(queryText, index, 1)
+        If currentChar = "'" Then
+            index = PositionAfterSqlString(queryText, index)
+        ElseIf StartsWithAt(queryText, index, "--") Then
+            index = PositionAfterLineComment(queryText, index)
+        ElseIf StartsWithAt(queryText, index, "/*") Then
+            index = PositionAfterBlockComment(queryText, index)
+        ElseIf currentChar = "(" Then
+            closingIndex = MatchingClosingParenthesis(queryText, index)
+            If closingIndex = 0 Then
+                index = index + 1
+            Else
+                blockText = Mid$(queryText, index + 1, closingIndex - index - 1)
+                CollectSubqueryBlocks blockText, blocks
+                normalizedBlock = NormalizeOutputQueryBlock(blockText)
+                If IsSubqueryBlock(normalizedBlock) Then
+                    blocks.Add normalizedBlock
+                End If
+                index = closingIndex + 1
+            End If
+        Else
+            index = index + 1
+        End If
+    Loop
+End Sub
+
+' アウトプット用に前後空白だけを除去
+Private Function NormalizeOutputQueryBlock(ByVal queryText As String) As String
+    NormalizeOutputQueryBlock = TrimSqlWhitespace(queryText)
+End Function
+
+' サブクエリとして扱うブロックか判定
+Private Function IsSubqueryBlock(ByVal queryText As String) As Boolean
+    IsSubqueryBlock = StartsWithSqlToken(queryText, "SELECT") Or StartsWithSqlToken(queryText, "WITH")
+End Function
+
+' SQL先頭トークンが指定語か判定
+Private Function StartsWithSqlToken(ByVal queryText As String, ByVal tokenText As String) As Boolean
+    Dim trimmedText As String
+    Dim nextChar As String
+
+    trimmedText = TrimSqlWhitespace(queryText)
+    If Len(trimmedText) < Len(tokenText) Then Exit Function
+    If UCase$(Left$(trimmedText, Len(tokenText))) <> tokenText Then Exit Function
+    If Len(trimmedText) = Len(tokenText) Then
+        StartsWithSqlToken = True
+        Exit Function
+    End If
+
+    nextChar = Mid$(trimmedText, Len(tokenText) + 1, 1)
+    StartsWithSqlToken = Not IsIdentifierCharacter(nextChar)
+End Function
+
+' SQL上の前後空白を除去
+Private Function TrimSqlWhitespace(ByVal sourceText As String) As String
+    Dim startIndex As Long
+    Dim endIndex As Long
+
+    startIndex = 1
+    Do While startIndex <= Len(sourceText)
+        If Not IsWhitespace(Mid$(sourceText, startIndex, 1)) Then Exit Do
+        startIndex = startIndex + 1
+    Loop
+
+    endIndex = Len(sourceText)
+    Do While endIndex >= startIndex
+        If Not IsWhitespace(Mid$(sourceText, endIndex, 1)) Then Exit Do
+        endIndex = endIndex - 1
+    Loop
+
+    If endIndex >= startIndex Then
+        TrimSqlWhitespace = Mid$(sourceText, startIndex, endIndex - startIndex + 1)
+    End If
+End Function
+
+' 指定位置から始まる文字列か判定
+Private Function StartsWithAt(ByVal sourceText As String, ByVal startIndex As Long, ByVal searchText As String) As Boolean
+    If startIndex + Len(searchText) - 1 > Len(sourceText) Then Exit Function
+    StartsWithAt = (Mid$(sourceText, startIndex, Len(searchText)) = searchText)
+End Function
+
+' 対応する閉じ括弧の位置を取得
+Private Function MatchingClosingParenthesis(ByVal sourceText As String, ByVal openingIndex As Long) As Long
+    Dim index As Long
+    Dim depth As Long
+    Dim currentChar As String
+
+    index = openingIndex
+    Do While index <= Len(sourceText)
+        currentChar = Mid$(sourceText, index, 1)
+        If currentChar = "'" Then
+            index = PositionAfterSqlString(sourceText, index)
+        ElseIf StartsWithAt(sourceText, index, "--") Then
+            index = PositionAfterLineComment(sourceText, index)
+        ElseIf StartsWithAt(sourceText, index, "/*") Then
+            index = PositionAfterBlockComment(sourceText, index)
+        ElseIf currentChar = "(" Then
+            depth = depth + 1
+            index = index + 1
+        ElseIf currentChar = ")" Then
+            depth = depth - 1
+            If depth = 0 Then
+                MatchingClosingParenthesis = index
+                Exit Function
+            End If
+            index = index + 1
+        Else
+            index = index + 1
+        End If
+    Loop
+End Function
+
+' 文字列リテラルの直後の位置を取得
+Private Function PositionAfterSqlString(ByVal sourceText As String, ByVal quoteIndex As Long) As Long
+    Dim index As Long
+
+    index = quoteIndex + 1
+    Do While index <= Len(sourceText)
+        If Mid$(sourceText, index, 1) = "'" Then
+            If index < Len(sourceText) And Mid$(sourceText, index + 1, 1) = "'" Then
+                index = index + 2
+            Else
+                PositionAfterSqlString = index + 1
+                Exit Function
+            End If
+        Else
+            index = index + 1
+        End If
+    Loop
+
+    PositionAfterSqlString = Len(sourceText) + 1
+End Function
+
+' 行コメントの直後の位置を取得
+Private Function PositionAfterLineComment(ByVal sourceText As String, ByVal commentIndex As Long) As Long
+    Dim newlineIndex As Long
+
+    newlineIndex = InStr(commentIndex + 2, sourceText, vbLf, vbBinaryCompare)
+    If newlineIndex = 0 Then
+        PositionAfterLineComment = Len(sourceText) + 1
+    Else
+        PositionAfterLineComment = newlineIndex + 1
+    End If
+End Function
+
+' ブロックコメントの直後の位置を取得
+Private Function PositionAfterBlockComment(ByVal sourceText As String, ByVal commentIndex As Long) As Long
+    Dim closeIndex As Long
+
+    closeIndex = InStr(commentIndex + 2, sourceText, "*/", vbBinaryCompare)
+    If closeIndex = 0 Then
+        PositionAfterBlockComment = Len(sourceText) + 1
+    Else
+        PositionAfterBlockComment = closeIndex + 2
+    End If
+End Function
 
 ' Excel検索ダイアログの検索方向を行へ戻す
 Private Sub RestoreFindSearchOrderByRows(ByVal ws As Worksheet)
