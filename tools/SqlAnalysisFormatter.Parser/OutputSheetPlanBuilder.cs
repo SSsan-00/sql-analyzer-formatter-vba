@@ -1,0 +1,973 @@
+using Microsoft.SqlServer.TransactSql.ScriptDom;
+using System.Text.RegularExpressions;
+
+namespace SqlAnalysisFormatter.Parser;
+
+/// <summary>
+/// T-SQL ASTをアウトプットシートの描画計画へ変換
+/// </summary>
+public static class OutputSheetPlanBuilder
+{
+    private const string MissingName = "(和名未取得)";
+
+    /// <summary>
+    /// 和名変換済みSQLから描画計画を作成
+    /// </summary>
+    public static OutputSheetPlan Build(string sql, IReadOnlyList<MappingDefinition> mappings)
+    {
+        ArgumentNullException.ThrowIfNull(sql);
+        ArgumentNullException.ThrowIfNull(mappings);
+
+        var parser = new TSql160Parser(initialQuotedIdentifiers: false);
+        using var reader = new StringReader(sql);
+        var fragment = parser.Parse(reader, out var errors);
+        if (errors.Count > 0 || fragment is not TSqlScript script)
+        {
+            return CreateFallback(sql);
+        }
+
+        var statement = script.Batches.FirstOrDefault()?.Statements.FirstOrDefault();
+        return statement switch
+        {
+            SelectStatement selectStatement => BuildSelectStatement(sql, selectStatement, mappings),
+            InsertStatement insertStatement => BuildInsert(sql, insertStatement, mappings),
+            UpdateStatement updateStatement => BuildUpdate(sql, updateStatement, mappings),
+            DeleteStatement deleteStatement => BuildDelete(sql, deleteStatement, mappings),
+            _ => CreateFallback(sql)
+        };
+    }
+
+    private static OutputSheetPlan BuildSelectStatement(
+        string sql,
+        SelectStatement selectStatement,
+        IReadOnlyList<MappingDefinition> mappings)
+    {
+        var subqueries = SubqueryCollector.Collect(selectStatement);
+        var plans = new List<OutputSheetPlan>();
+        foreach (var subquery in subqueries)
+        {
+            var children = DirectChildSubqueries(subquery.QueryExpression, subqueries);
+            var plan = BuildQueryExpression(
+                sql,
+                subquery.QueryExpression,
+                mappings,
+                $"サブクエリ[{subquery.Name}]",
+                children.Where(child => !child.IsNamed).Select(child => child.Name));
+            plans.Add(ReplaceSubqueries(plan, sql, children));
+        }
+
+        var wholeChildren = DirectChildSubqueries(selectStatement.QueryExpression, subqueries);
+        var wholePlan = BuildQueryExpression(
+            sql,
+            selectStatement.QueryExpression,
+            mappings,
+            "＜DB入出力項目定義＞",
+            wholeChildren.Where(child => !child.IsNamed).Select(child => child.Name));
+        plans.Add(ReplaceSubqueries(wholePlan, sql, wholeChildren));
+
+        return CombinePlans(plans);
+    }
+
+    private static OutputSheetPlan BuildInsert(
+        string sql,
+        InsertStatement statement,
+        IReadOnlyList<MappingDefinition> mappings)
+    {
+        var specification = statement.InsertSpecification;
+        if (specification.InsertSource is not SelectInsertSource selectSource ||
+            UnwrapQueryExpression(selectSource.Select) is not QuerySpecification sourceQuery)
+        {
+            return CreateFallback(sql);
+        }
+
+        var targetDisplay = BuildTargetTableDisplay(specification.Target, mappings, includeIdentifier: false);
+        var sourceTables = BuildTableList(sourceQuery, mappings, []);
+        var references = sourceTables == "なし"
+            ? targetDisplay
+            : targetDisplay + "、" + sourceTables;
+        var transferCount = Math.Min(specification.Columns.Count, sourceQuery.SelectElements.Count);
+        var transfers = new List<TransferItem>(transferCount);
+        for (var index = 0; index < transferCount; index++)
+        {
+            transfers.Add(new TransferItem(
+                FragmentText(sql, specification.Columns[index]),
+                RenderSelectElement(sql, sourceQuery.SelectElements[index])));
+        }
+
+        return BuildDataTransferPlan(
+            sql,
+            references,
+            transfers,
+            sourceQuery.FromClause,
+            sourceQuery.WhereClause,
+            mappings);
+    }
+
+    private static OutputSheetPlan BuildDelete(
+        string sql,
+        DeleteStatement statement,
+        IReadOnlyList<MappingDefinition> mappings)
+    {
+        var specification = statement.DeleteSpecification;
+        var references = BuildTableList(specification.FromClause, mappings, []);
+        if (references == "なし")
+        {
+            references = BuildTargetTableDisplay(specification.Target, mappings, includeIdentifier: true);
+        }
+
+        return BuildDataTransferPlan(
+            sql,
+            references,
+            [],
+            specification.FromClause,
+            specification.WhereClause,
+            mappings);
+    }
+
+    private static OutputSheetPlan BuildUpdate(
+        string sql,
+        UpdateStatement statement,
+        IReadOnlyList<MappingDefinition> mappings)
+    {
+        var specification = statement.UpdateSpecification;
+        var references = BuildTableList(specification.FromClause, mappings, []);
+        if (references == "なし")
+        {
+            references = BuildTargetTableDisplay(specification.Target, mappings, includeIdentifier: true);
+        }
+
+        var transfers = specification.SetClauses
+            .OfType<AssignmentSetClause>()
+            .Where(clause => clause.Column is not null)
+            .Select(clause => new TransferItem(
+                FragmentText(sql, clause.Column),
+                FragmentText(sql, clause.NewValue)))
+            .ToArray();
+        return BuildDataTransferPlan(
+            sql,
+            references,
+            transfers,
+            specification.FromClause,
+            specification.WhereClause,
+            mappings);
+    }
+
+    private static OutputSheetPlan BuildDataTransferPlan(
+        string sql,
+        string references,
+        IReadOnlyList<TransferItem> transfers,
+        FromClause? fromClause,
+        WhereClause? whereClause,
+        IReadOnlyList<MappingDefinition> mappings)
+    {
+        var cells = new List<OutputCell>
+        {
+            new(1, 1, "＜データ移送表＞"),
+            new(2, 1, "参照テーブル: " + references)
+        };
+        var sections = new List<OutputSection>
+        {
+            new(OutputSectionKind.Reference, 2, 2)
+        };
+        var row = 3;
+
+        if (transfers.Count > 0)
+        {
+            var startRow = row;
+            cells.Add(new OutputCell(row, 1, "項目"));
+            cells.Add(new OutputCell(row, 19, "移送元"));
+            cells.Add(new OutputCell(row, 37, "移送方法ほか"));
+            row++;
+            foreach (var transfer in transfers)
+            {
+                cells.Add(new OutputCell(row, 1, transfer.Target));
+                cells.Add(new OutputCell(row, 19, transfer.Source));
+                row++;
+            }
+            sections.Add(new OutputSection(OutputSectionKind.Transfer, startRow, row - 1));
+        }
+
+        WriteJoinSection(cells, sections, sql, fromClause, mappings, ref row);
+        if (whereClause is not null)
+        {
+            WriteConditionSection(cells, sections, sql, "検索条件", whereClause.SearchCondition, ref row);
+        }
+
+        return new OutputSheetPlan(cells, sections, row - 1, false);
+    }
+
+    private static string BuildTargetTableDisplay(
+        TableReference target,
+        IReadOnlyList<MappingDefinition> mappings,
+        bool includeIdentifier)
+    {
+        if (target is not NamedTableReference named)
+        {
+            return MissingName;
+        }
+
+        var tableId = named.Alias?.Value ?? named.SchemaObject.BaseIdentifier.Value;
+        var tableName = ResolveTableName(tableId, mappings);
+        return includeIdentifier ? $"{tableName}[{tableId}]" : tableName;
+    }
+
+    private static OutputSheetPlan BuildQueryExpression(
+        string sql,
+        QueryExpression expression,
+        IReadOnlyList<MappingDefinition> mappings,
+        string title,
+        IEnumerable<string> additionalTables)
+    {
+        expression = UnwrapQueryExpression(expression);
+        return expression switch
+        {
+            QuerySpecification query => BuildSelect(sql, query, mappings, title, additionalTables),
+            BinaryQueryExpression binary => BuildBinaryQuery(sql, binary, mappings, title, additionalTables),
+            _ => CreateFallback(FragmentText(sql, expression))
+        };
+    }
+
+    private static OutputSheetPlan BuildBinaryQuery(
+        string sql,
+        BinaryQueryExpression binary,
+        IReadOnlyList<MappingDefinition> mappings,
+        string title,
+        IEnumerable<string> additionalTables)
+    {
+        var branches = new List<QuerySpecification>();
+        var separators = new List<string>();
+        AddBinaryBranches(binary, branches, separators);
+        if (branches.Count == 0)
+        {
+            return CreateFallback(FragmentText(sql, binary));
+        }
+
+        var tableDisplays = branches
+            .SelectMany(branch => BuildTableList(branch, mappings, []).Split('、'))
+            .Where(value => value != "なし" && value.Length > 0)
+            .Concat(additionalTables)
+            .Distinct(StringComparer.OrdinalIgnoreCase);
+        var cells = new List<OutputCell>
+        {
+            new(1, 1, title),
+            new(2, 1, "参照テーブル: " + string.Join("、", tableDisplays))
+        };
+        var sections = new List<OutputSection>
+        {
+            new(OutputSectionKind.Reference, 2, 2)
+        };
+        var row = 3;
+
+        for (var index = 0; index < branches.Count; index++)
+        {
+            var branchPlan = BuildSelect(sql, branches[index], mappings, title, []);
+            var bodyOffset = row - 3;
+            cells.AddRange(branchPlan.Cells
+                .Where(cell => cell.Row >= 3)
+                .Select(cell => cell with { Row = cell.Row + bodyOffset }));
+            sections.AddRange(branchPlan.Sections
+                .Where(section => section.Kind != OutputSectionKind.Reference)
+                .Select(section => section with
+                {
+                    StartRow = section.StartRow + bodyOffset,
+                    EndRow = section.EndRow + bodyOffset
+                }));
+            row += Math.Max(0, branchPlan.RowCount - 2);
+
+            if (index < separators.Count)
+            {
+                cells.Add(new OutputCell(row, 1, $"＜{separators[index]}＞"));
+                sections.Add(new OutputSection(OutputSectionKind.Separator, row, row));
+                row++;
+            }
+        }
+
+        return new OutputSheetPlan(cells, sections, row - 1, false);
+    }
+
+    private static void AddBinaryBranches(
+        QueryExpression expression,
+        ICollection<QuerySpecification> branches,
+        ICollection<string> separators)
+    {
+        expression = UnwrapQueryExpression(expression);
+        if (expression is BinaryQueryExpression binary)
+        {
+            AddBinaryBranches(binary.FirstQueryExpression, branches, separators);
+            separators.Add(BinaryOperatorText(binary));
+            AddBinaryBranches(binary.SecondQueryExpression, branches, separators);
+            return;
+        }
+
+        if (expression is QuerySpecification query)
+        {
+            branches.Add(query);
+        }
+    }
+
+    private static string BinaryOperatorText(BinaryQueryExpression binary)
+    {
+        var operation = binary.BinaryQueryExpressionType switch
+        {
+            BinaryQueryExpressionType.Except => "EXCEPT",
+            BinaryQueryExpressionType.Intersect => "INTERSECT",
+            _ => "UNION"
+        };
+        return binary.All ? operation + " ALL" : operation;
+    }
+
+    private static IReadOnlyList<SubqueryInfo> DirectChildSubqueries(
+        QueryExpression parent,
+        IReadOnlyList<SubqueryInfo> subqueries)
+    {
+        return subqueries
+            .Where(candidate => ContainsFragment(parent, candidate.QueryExpression))
+            .Where(candidate => !subqueries.Any(other =>
+                !ReferenceEquals(candidate, other) &&
+                ContainsFragment(parent, other.QueryExpression) &&
+                ContainsFragment(other.QueryExpression, candidate.QueryExpression)))
+            .ToArray();
+    }
+
+    private static bool ContainsFragment(TSqlFragment parent, TSqlFragment child)
+    {
+        if (parent.StartOffset == child.StartOffset && parent.FragmentLength == child.FragmentLength)
+        {
+            return false;
+        }
+
+        return child.StartOffset >= parent.StartOffset &&
+            child.StartOffset + child.FragmentLength <= parent.StartOffset + parent.FragmentLength;
+    }
+
+    private static OutputSheetPlan ReplaceSubqueries(
+        OutputSheetPlan plan,
+        string sql,
+        IReadOnlyList<SubqueryInfo> subqueries)
+    {
+        if (subqueries.Count == 0)
+        {
+            return plan;
+        }
+
+        var cells = plan.Cells.Select(cell =>
+        {
+            var value = cell.Value;
+            foreach (var subquery in subqueries)
+            {
+                value = value.Replace(
+                    FragmentText(sql, subquery.QueryExpression),
+                    subquery.Name,
+                    StringComparison.Ordinal);
+                value = Regex.Replace(
+                    value,
+                    @"\(\s*" + Regex.Escape(subquery.Name) + @"\s*\)",
+                    "(" + subquery.Name + ")",
+                    RegexOptions.CultureInvariant);
+            }
+            return cell with { Value = value };
+        }).ToArray();
+        return plan with { Cells = cells };
+    }
+
+    private static OutputSheetPlan CombinePlans(IReadOnlyList<OutputSheetPlan> plans)
+    {
+        if (plans.Count == 1)
+        {
+            return plans[0];
+        }
+
+        var cells = new List<OutputCell>();
+        var sections = new List<OutputSection>();
+        var nextStartRow = 1;
+        var lastRow = 0;
+        for (var index = 0; index < plans.Count; index++)
+        {
+            var plan = plans[index];
+            var offset = nextStartRow - 1;
+            cells.AddRange(plan.Cells.Select(cell => cell with { Row = cell.Row + offset }));
+            sections.AddRange(plan.Sections.Select(section => section with
+            {
+                StartRow = section.StartRow + offset,
+                EndRow = section.EndRow + offset
+            }));
+            lastRow = offset + plan.RowCount;
+            nextStartRow = lastRow + 2;
+        }
+
+        return new OutputSheetPlan(cells, sections, lastRow, plans.Any(plan => plan.IsFallback));
+    }
+
+    private static OutputSheetPlan BuildSelect(
+        string sql,
+        QuerySpecification query,
+        IReadOnlyList<MappingDefinition> mappings,
+        string title,
+        IEnumerable<string> additionalTables)
+    {
+        var tableList = BuildTableList(query, mappings, additionalTables);
+        var cells = new List<OutputCell>
+        {
+            new(1, 1, title),
+            new(2, 1, "参照テーブル: " + tableList)
+        };
+
+        var sections = new List<OutputSection>
+        {
+            new(OutputSectionKind.Reference, 2, 2)
+        };
+        var row = 3;
+
+        if (query.TopRowFilter is not null)
+        {
+            cells.Add(new OutputCell(row, 1, "取得件数"));
+            cells.Add(new OutputCell(row, 7, RenderTopCount(sql, query.TopRowFilter.Expression)));
+            sections.Add(new OutputSection(OutputSectionKind.Standard, row, row));
+            row++;
+        }
+
+        var itemStartRow = row;
+        for (var index = 0; index < query.SelectElements.Count; index++)
+        {
+            row += WriteSelectElement(cells, sql, query.SelectElements[index], row, index + 1);
+        }
+        if (row > itemStartRow)
+        {
+            sections.Add(new OutputSection(OutputSectionKind.Standard, itemStartRow, row - 1));
+        }
+
+        WriteJoinSection(cells, sections, sql, query.FromClause, mappings, ref row);
+
+        if (query.WhereClause is not null)
+        {
+            WriteConditionSection(cells, sections, sql, "検索条件", query.WhereClause.SearchCondition, ref row);
+        }
+
+        if (query.GroupByClause is not null)
+        {
+            var startRow = row;
+            for (var index = 0; index < query.GroupByClause.GroupingSpecifications.Count; index++)
+            {
+                if (index == 0)
+                {
+                    cells.Add(new OutputCell(row, 1, "グループ"));
+                }
+
+                cells.Add(new OutputCell(row, 7, $"グループキー{index + 1}"));
+                cells.Add(new OutputCell(row, 15, ":"));
+                cells.Add(new OutputCell(row, 17, RenderGrouping(sql, query.GroupByClause.GroupingSpecifications[index])));
+                row++;
+            }
+            sections.Add(new OutputSection(OutputSectionKind.Standard, startRow, row - 1));
+        }
+
+        if (query.HavingClause is not null)
+        {
+            WriteConditionSection(cells, sections, sql, "集計条件", query.HavingClause.SearchCondition, ref row);
+        }
+
+        if (query.OrderByClause is not null && query.OrderByClause.OrderByElements.Count > 0)
+        {
+            var startRow = row;
+            for (var index = 0; index < query.OrderByClause.OrderByElements.Count; index++)
+            {
+                var element = query.OrderByClause.OrderByElements[index];
+                if (index == 0)
+                {
+                    cells.Add(new OutputCell(row, 1, "並び順"));
+                }
+
+                var value = FragmentText(sql, element.Expression);
+                if (element.SortOrder == SortOrder.Descending)
+                {
+                    value += "(降順)";
+                }
+
+                cells.Add(new OutputCell(row, 7, $"ソートキー{index + 1}"));
+                cells.Add(new OutputCell(row, 15, ":"));
+                cells.Add(new OutputCell(row, 17, value));
+                row++;
+            }
+            sections.Add(new OutputSection(OutputSectionKind.Standard, startRow, row - 1));
+        }
+
+        return new OutputSheetPlan(
+            cells,
+            sections,
+            row - 1,
+            false);
+    }
+
+    private static int WriteSelectElement(
+        ICollection<OutputCell> cells,
+        string sql,
+        SelectElement element,
+        int row,
+        int itemNumber)
+    {
+        cells.Add(new OutputCell(row, 7, $"取得項目{itemNumber}"));
+        cells.Add(new OutputCell(row, 15, ":"));
+        if (itemNumber == 1)
+        {
+            cells.Add(new OutputCell(row, 1, "取得項目"));
+        }
+
+        if (element is SelectScalarExpression scalar && scalar.ColumnName is not null)
+        {
+            cells.Add(new OutputCell(row, 17, FragmentText(sql, scalar.ColumnName)));
+            cells.Add(new OutputCell(row, 31, "※"));
+            if (scalar.Expression is SearchedCaseExpression searchedCase)
+            {
+                return WriteSearchedCase(cells, sql, searchedCase, row);
+            }
+            if (scalar.Expression is SimpleCaseExpression simpleCase)
+            {
+                return WriteSimpleCase(cells, sql, simpleCase, row);
+            }
+
+            cells.Add(new OutputCell(row, 32, FragmentText(sql, scalar.Expression)));
+            return 1;
+        }
+
+        cells.Add(new OutputCell(row, 17, RenderSelectElement(sql, element)));
+        return 1;
+    }
+
+    private static int WriteSearchedCase(
+        ICollection<OutputCell> cells,
+        string sql,
+        SearchedCaseExpression expression,
+        int startRow)
+    {
+        var row = startRow;
+        foreach (var clause in expression.WhenClauses)
+        {
+            var value = $"{FragmentText(sql, clause.WhenExpression)} → {FragmentText(sql, clause.ThenExpression)}";
+            cells.Add(new OutputCell(row, 32, value));
+            row++;
+        }
+
+        if (expression.ElseExpression is not null)
+        {
+            cells.Add(new OutputCell(row, 32, $"それ以外 → {FragmentText(sql, expression.ElseExpression)}"));
+            row++;
+        }
+
+        return Math.Max(1, row - startRow);
+    }
+
+    private static int WriteSimpleCase(
+        ICollection<OutputCell> cells,
+        string sql,
+        SimpleCaseExpression expression,
+        int startRow)
+    {
+        var row = startRow;
+        var input = FragmentText(sql, expression.InputExpression);
+        foreach (var clause in expression.WhenClauses)
+        {
+            var value = $"{input} = {FragmentText(sql, clause.WhenExpression)} → {FragmentText(sql, clause.ThenExpression)}";
+            cells.Add(new OutputCell(row, 32, value));
+            row++;
+        }
+
+        if (expression.ElseExpression is not null)
+        {
+            cells.Add(new OutputCell(row, 32, $"それ以外 → {FragmentText(sql, expression.ElseExpression)}"));
+            row++;
+        }
+
+        return Math.Max(1, row - startRow);
+    }
+
+    private static void WriteConditionSection(
+        ICollection<OutputCell> cells,
+        ICollection<OutputSection> sections,
+        string sql,
+        string label,
+        BooleanExpression condition,
+        ref int row)
+    {
+        var startRow = row;
+        cells.Add(new OutputCell(row, 1, label));
+        var outerParts = FlattenBooleanExpression(condition);
+        foreach (var part in outerParts)
+        {
+            if (TryGetParenthesizedCondition(part.Expression, out var innerCondition, out var isNegated))
+            {
+                var connector = part.Connector;
+                if (isNegated)
+                {
+                    connector = connector.Length == 0 ? "NOT" : connector + " NOT";
+                }
+
+                if (connector.Length == 0)
+                {
+                    cells.Add(new OutputCell(row, 7, "("));
+                }
+                else
+                {
+                    cells.Add(new OutputCell(row, 7, connector));
+                    cells.Add(new OutputCell(row, 15, "("));
+                }
+
+                var innerParts = FlattenBooleanExpression(innerCondition);
+                for (var innerIndex = 0; innerIndex < innerParts.Count; innerIndex++)
+                {
+                    if (innerIndex > 0)
+                    {
+                        cells.Add(new OutputCell(row, 15, innerParts[innerIndex].Connector));
+                    }
+
+                    cells.Add(new OutputCell(row, 17, FragmentText(sql, innerParts[innerIndex].Expression)));
+                    row++;
+                }
+
+                cells.Add(new OutputCell(row, 7, ")"));
+                row++;
+            }
+            else
+            {
+                if (part.Connector.Length > 0)
+                {
+                    cells.Add(new OutputCell(row, 7, part.Connector));
+                }
+
+                cells.Add(new OutputCell(row, 17, FragmentText(sql, part.Expression)));
+                row++;
+            }
+        }
+        sections.Add(new OutputSection(OutputSectionKind.Standard, startRow, row - 1));
+    }
+
+    private static bool TryGetParenthesizedCondition(
+        BooleanExpression expression,
+        out BooleanExpression innerCondition,
+        out bool isNegated)
+    {
+        isNegated = false;
+        if (expression is BooleanParenthesisExpression parenthesized)
+        {
+            innerCondition = parenthesized.Expression;
+            return true;
+        }
+
+        if (expression is BooleanNotExpression negated &&
+            negated.Expression is BooleanParenthesisExpression negatedParenthesis)
+        {
+            innerCondition = negatedParenthesis.Expression;
+            isNegated = true;
+            return true;
+        }
+
+        innerCondition = expression;
+        return false;
+    }
+
+    private static void WriteJoinSection(
+        ICollection<OutputCell> cells,
+        ICollection<OutputSection> sections,
+        string sql,
+        FromClause? fromClause,
+        IReadOnlyList<MappingDefinition> mappings,
+        ref int row)
+    {
+        if (fromClause is null)
+        {
+            return;
+        }
+
+        var joins = fromClause.TableReferences.SelectMany(EnumerateJoins).ToArray();
+        if (joins.Length == 0)
+        {
+            return;
+        }
+
+        var startRow = row;
+        for (var joinIndex = 0; joinIndex < joins.Length; joinIndex++)
+        {
+            var join = joins[joinIndex];
+            if (joinIndex == 0)
+            {
+                cells.Add(new OutputCell(row, 1, "結合条件"));
+            }
+
+            var leftTable = EnumerateNamedTables(join.FirstTableReference).Last();
+            var rightTable = EnumerateNamedTables(join.SecondTableReference).First();
+            var joinText = $"＜{BuildTableDisplay(leftTable, mappings)} {JoinTypeText(join.QualifiedJoinType)} {BuildTableDisplay(rightTable, mappings)}＞";
+            cells.Add(new OutputCell(row, 17, joinText));
+            row++;
+
+            var parts = FlattenBooleanExpression(join.SearchCondition);
+            for (var conditionIndex = 0; conditionIndex < parts.Count; conditionIndex++)
+            {
+                if (conditionIndex > 0)
+                {
+                    cells.Add(new OutputCell(row, 7, parts[conditionIndex].Connector));
+                }
+
+                cells.Add(new OutputCell(row, 17, FragmentText(sql, parts[conditionIndex].Expression)));
+                row++;
+            }
+        }
+
+        sections.Add(new OutputSection(OutputSectionKind.Standard, startRow, row - 1));
+    }
+
+    private static IEnumerable<QualifiedJoin> EnumerateJoins(TableReference table)
+    {
+        if (table is not QualifiedJoin join)
+        {
+            yield break;
+        }
+
+        foreach (var innerJoin in EnumerateJoins(join.FirstTableReference))
+        {
+            yield return innerJoin;
+        }
+
+        yield return join;
+    }
+
+    private static string JoinTypeText(QualifiedJoinType joinType)
+    {
+        return joinType switch
+        {
+            QualifiedJoinType.Inner => "INNER JOIN",
+            QualifiedJoinType.LeftOuter => "LEFT JOIN",
+            QualifiedJoinType.RightOuter => "RIGHT JOIN",
+            QualifiedJoinType.FullOuter => "FULL JOIN",
+            _ => "JOIN"
+        };
+    }
+
+    private static IReadOnlyList<ConditionPart> FlattenBooleanExpression(BooleanExpression expression)
+    {
+        var parts = new List<ConditionPart>();
+        AddBooleanParts(expression, string.Empty, parts);
+        return parts;
+    }
+
+    private static void AddBooleanParts(
+        BooleanExpression expression,
+        string connector,
+        ICollection<ConditionPart> parts)
+    {
+        if (expression is BooleanBinaryExpression binary)
+        {
+            AddBooleanParts(binary.FirstExpression, connector, parts);
+            AddBooleanParts(binary.SecondExpression, BooleanOperatorText(binary.BinaryExpressionType), parts);
+            return;
+        }
+
+        parts.Add(new ConditionPart(connector, expression));
+    }
+
+    private static string BooleanOperatorText(BooleanBinaryExpressionType operatorType)
+    {
+        return operatorType == BooleanBinaryExpressionType.Or ? "OR" : "AND";
+    }
+
+    private static string RenderGrouping(string sql, GroupingSpecification grouping)
+    {
+        return grouping is ExpressionGroupingSpecification expressionGrouping
+            ? FragmentText(sql, expressionGrouping.Expression)
+            : FragmentText(sql, grouping);
+    }
+
+    private static string RenderTopCount(string sql, ScalarExpression expression)
+    {
+        return expression is ParenthesisExpression parenthesized
+            ? FragmentText(sql, parenthesized.Expression)
+            : FragmentText(sql, expression);
+    }
+
+    private static string BuildTableList(
+        QuerySpecification query,
+        IReadOnlyList<MappingDefinition> mappings,
+        IEnumerable<string> additionalTables)
+    {
+        return BuildTableList(query.FromClause, mappings, additionalTables);
+    }
+
+    private static string BuildTableList(
+        FromClause? fromClause,
+        IReadOnlyList<MappingDefinition> mappings,
+        IEnumerable<string> additionalTables)
+    {
+        var displays = (fromClause?.TableReferences
+            .SelectMany(EnumerateNamedTables)
+            .Select(table => BuildTableDisplay(table, mappings))
+            ?? [])
+            .Concat(additionalTables)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        return displays.Length == 0 ? "なし" : string.Join("、", displays);
+    }
+
+    private static string BuildTableDisplay(
+        NamedTableReference table,
+        IReadOnlyList<MappingDefinition> mappings)
+    {
+        var tableId = table.Alias?.Value ?? table.SchemaObject.BaseIdentifier.Value;
+        var tableName = ResolveTableName(tableId, mappings);
+        return $"{tableName}[{tableId}]";
+    }
+
+    private static string ResolveTableName(
+        string tableId,
+        IReadOnlyList<MappingDefinition> mappings)
+    {
+        var tableName = mappings
+            .FirstOrDefault(mapping => string.Equals(mapping.TableId, tableId, StringComparison.OrdinalIgnoreCase))
+            ?.TableName;
+        if (string.IsNullOrWhiteSpace(tableName))
+        {
+            tableName = MissingName;
+        }
+
+        return tableName;
+    }
+
+    private static IEnumerable<NamedTableReference> EnumerateNamedTables(TableReference table)
+    {
+        switch (table)
+        {
+            case NamedTableReference named:
+                yield return named;
+                break;
+            case QualifiedJoin join:
+                foreach (var item in EnumerateNamedTables(join.FirstTableReference))
+                {
+                    yield return item;
+                }
+                foreach (var item in EnumerateNamedTables(join.SecondTableReference))
+                {
+                    yield return item;
+                }
+                break;
+        }
+    }
+
+    private static string RenderSelectElement(string sql, SelectElement element)
+    {
+        return element switch
+        {
+            SelectScalarExpression scalar => FragmentText(sql, scalar.Expression),
+            SelectStarExpression star => FragmentText(sql, star),
+            _ => FragmentText(sql, element)
+        };
+    }
+
+    private static QueryExpression UnwrapQueryExpression(QueryExpression expression)
+    {
+        while (expression is QueryParenthesisExpression parenthesized)
+        {
+            expression = parenthesized.QueryExpression;
+        }
+
+        return expression;
+    }
+
+    private static string FragmentText(string sql, TSqlFragment fragment)
+    {
+        if (fragment.StartOffset < 0 || fragment.FragmentLength <= 0 ||
+            fragment.StartOffset + fragment.FragmentLength > sql.Length)
+        {
+            return string.Empty;
+        }
+
+        return sql.Substring(fragment.StartOffset, fragment.FragmentLength).Trim();
+    }
+
+    private static OutputSheetPlan CreateFallback(string sql)
+    {
+        var text = sql.Trim();
+        var cells = text.Length == 0
+            ? Array.Empty<OutputCell>()
+            : [new OutputCell(1, 1, text)];
+        return new OutputSheetPlan(cells, [], cells.Length, true);
+    }
+
+    /// <summary>
+    /// サブクエリを内側から収集し、出力名を割り当てる
+    /// </summary>
+    private sealed class SubqueryCollector : TSqlFragmentVisitor
+    {
+        private readonly List<SubqueryInfo> _items = [];
+        private readonly HashSet<(int StartOffset, int Length)> _seen = [];
+
+        public static IReadOnlyList<SubqueryInfo> Collect(SelectStatement statement)
+        {
+            var collector = new SubqueryCollector();
+            statement.Accept(collector);
+            return collector._items;
+        }
+
+        public override void ExplicitVisit(CommonTableExpression node)
+        {
+            Add(node.QueryExpression, node.ExpressionName.Value, true);
+        }
+
+        public override void ExplicitVisit(QueryDerivedTable node)
+        {
+            Add(node.QueryExpression, null, false);
+            base.ExplicitVisit(node);
+        }
+
+        public override void ExplicitVisit(ScalarSubquery node)
+        {
+            Add(node.QueryExpression, null, false);
+            base.ExplicitVisit(node);
+        }
+
+        public override void ExplicitVisit(ExistsPredicate node)
+        {
+            Add(node.Subquery.QueryExpression, null, false);
+            base.ExplicitVisit(node);
+        }
+
+        public override void ExplicitVisit(InPredicate node)
+        {
+            if (node.Subquery is not null)
+            {
+                Add(node.Subquery.QueryExpression, null, false);
+            }
+
+            base.ExplicitVisit(node);
+        }
+
+        private void Add(QueryExpression query, string? explicitName, bool isNamed)
+        {
+            var key = (query.StartOffset, query.FragmentLength);
+            if (_seen.Contains(key))
+            {
+                return;
+            }
+
+            query.Accept(this);
+            if (!_seen.Add(key))
+            {
+                return;
+            }
+
+            var name = explicitName ?? $"SQ{_items.Count + 1}";
+            _items.Add(new SubqueryInfo(query, name, isNamed));
+        }
+    }
+
+    private sealed record SubqueryInfo(QueryExpression QueryExpression, string Name, bool IsNamed);
+
+    private sealed record TransferItem(string Target, string Source);
+
+    private sealed record ConditionPart(string Connector, BooleanExpression Expression);
+}
+
+/// <summary>
+/// 変換定義シートから渡す和名定義
+/// </summary>
+public sealed record MappingDefinition(
+    string TableId,
+    string TableName,
+    string FieldId,
+    string FieldName);
