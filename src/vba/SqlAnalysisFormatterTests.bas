@@ -182,7 +182,8 @@ Public Sub AnalyzeQueries_WritesUnsupportedQueryAsIs()
     If ExternalParserConfigured() Then
         AssertCellValue wsOutput.Cells(4, 1), ExpectedUnsupportedStatementReason()
     Else
-        AssertCellValue wsOutput.Cells(4, 1), ExpectedParserNotFoundReason()
+        AssertCellValue wsOutput.Cells(4, 1), ExpectedParserNotFoundReason() & _
+            ExpectedFallbackLocation(1, 2)
     End If
 End Sub
 
@@ -1222,7 +1223,8 @@ Private Sub AssertFallbackLines(ByVal wsOutput As Worksheet, ByVal queryText As 
 
     reasonRow = UBound(lines) - LBound(lines) + 3
     AssertCellValue wsOutput.Cells(reasonRow - 1, 1), ""
-    AssertCellValue wsOutput.Cells(reasonRow, 1), expectedReason
+    AssertCellValue wsOutput.Cells(reasonRow, 1), expectedReason & _
+        ExpectedFallbackLocation(1, UBound(lines) - LBound(lines) + 1)
 End Sub
 
 ' parser出力の共通書式を確認
@@ -1322,7 +1324,8 @@ End Function
 Private Function ExpectedUnsupportedStatementReason() As String
     ExpectedUnsupportedStatementReason = _
         W(&H30D5, &H30A9, &H30FC, &H30EB, &H30D0, &H30C3, &H30AF, &H539F, &H56E0) & ": " & _
-        W(&H672A, &H5BFE, &H5FDC, &H306E, &H30B9, &H30C6, &H30FC, &H30C8, &H30E1, &H30F3, &H30C8) & ": EXECUTE"
+        W(&H672A, &H5BFE, &H5FDC, &H306E, &H30B9, &H30C6, &H30FC, &H30C8, &H30E1, &H30F3, &H30C8) & ": EXECUTE" & _
+        ExpectedFallbackLocation(1, 2)
 End Function
 
 ' parser未配置時のフォールバック原因を返す
@@ -1330,6 +1333,19 @@ Private Function ExpectedParserNotFoundReason() As String
     ExpectedParserNotFoundReason = _
         W(&H30D5, &H30A9, &H30FC, &H30EB, &H30D0, &H30C3, &H30AF, &H539F, &H56E0) & ": parser EXE" & _
         W(&H304C, &H898B, &H3064, &H304B, &H308A, &H307E, &H305B, &H3093, &H3002)
+End Function
+
+' フォールバック対象クエリの行表示を返す
+Private Function ExpectedFallbackLocation(ByVal startRow As Long, ByVal endRow As Long) As String
+    Dim rowText As String
+
+    rowText = CStr(startRow)
+    If endRow <> startRow Then
+        rowText = rowText & W(&HFF5E) & CStr(endRow)
+    End If
+    ExpectedFallbackLocation = W(&HFF08, &H5BFE, &H8C61, &H30AF, &H30A8, &H30EA, &H3A, &H20, _
+        &H30A2, &H30A6, &H30C8, &H30D7, &H30C3, &H30C8, &H30B7, &H30FC, &H30C8, &H20) & _
+        rowText & W(&H884C, &H76EE, &HFF09)
 End Function
 
 ' ユーザーテーブル和名を返す

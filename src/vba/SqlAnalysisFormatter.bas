@@ -977,6 +977,7 @@ Private Sub WriteFallbackOutput(ByVal wsOutput As Worksheet, ByVal queryText As 
     Dim normalizedText As String
     Dim lineIndex As Long
     Dim reasonRow As Long
+    Dim queryEndRow As Long
 
     ClearOutputSheet wsOutput
     normalizedText = Replace(queryText, vbCrLf, vbLf)
@@ -989,8 +990,10 @@ Private Sub WriteFallbackOutput(ByVal wsOutput As Worksheet, ByVal queryText As 
         wsOutput.Cells(lineIndex - LBound(lines) + 1, 1).Value = CStr(lines(lineIndex))
     Next lineIndex
 
-    reasonRow = UBound(lines) - LBound(lines) + 3
-    wsOutput.Cells(reasonRow, 1).Value = FallbackReasonPrefix() & reason
+    queryEndRow = UBound(lines) - LBound(lines) + 1
+    reasonRow = queryEndRow + 2
+    wsOutput.Cells(reasonRow, 1).Value = FallbackReasonPrefix() & reason & _
+        FallbackQueryLocation(1, queryEndRow)
     ApplyOutputSheetDimensions wsOutput, reasonRow
     ApplyOutputSheetFont wsOutput, reasonRow
     ApplyOutputSheetView wsOutput
@@ -1583,6 +1586,19 @@ End Function
 ' フォールバック原因の見出しを取得
 Private Function FallbackReasonPrefix() As String
     FallbackReasonPrefix = W(&H30D5, &H30A9, &H30FC, &H30EB, &H30D0, &H30C3, &H30AF, &H539F, &H56E0) & ": "
+End Function
+
+' フォールバック対象クエリのアウトプット行を取得
+Private Function FallbackQueryLocation(ByVal startRow As Long, ByVal endRow As Long) As String
+    Dim rowText As String
+
+    rowText = CStr(startRow)
+    If endRow <> startRow Then
+        rowText = rowText & W(&HFF5E) & CStr(endRow)
+    End If
+    FallbackQueryLocation = W(&HFF08, &H5BFE, &H8C61, &H30AF, &H30A8, &H30EA) & ": " & _
+        W(&H30A2, &H30A6, &H30C8, &H30D7, &H30C3, &H30C8, &H30B7, &H30FC, &H30C8) & " " & _
+        rowText & W(&H884C, &H76EE, &HFF09)
 End Function
 
 ' parser未配置時の原因を取得

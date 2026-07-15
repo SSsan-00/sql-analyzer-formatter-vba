@@ -40,7 +40,7 @@ public static class OutputSheetPlanBuilder
         }
         catch (UnsupportedOutputException ex)
         {
-            return CreateFallback(sql, ex.Message);
+            return CreateFallback(sql, ex.Message, ex.Fragment);
         }
         catch (Exception ex)
         {
@@ -450,16 +450,45 @@ public static class OutputSheetPlanBuilder
         var sections = new List<OutputSection>();
         var nextStartRow = 1;
         var lastRow = 0;
+        int? fallbackQueryStartRow = null;
+        int? fallbackQueryEndRow = null;
         for (var index = 0; index < plans.Count; index++)
         {
             var plan = plans[index];
             var offset = nextStartRow - 1;
-            cells.AddRange(plan.Cells.Select(cell => cell with { Row = cell.Row + offset }));
+            var shiftedFallbackStartRow = plan.FallbackQueryStartRow + offset;
+            var shiftedFallbackEndRow = plan.FallbackQueryEndRow + offset;
+            foreach (var cell in plan.Cells)
+            {
+                var shiftedCell = cell with { Row = cell.Row + offset };
+                if (plan.IsFallback &&
+                    cell.Row == plan.RowCount &&
+                    cell.Column == 1 &&
+                    plan.FallbackReason is not null &&
+                    shiftedFallbackStartRow.HasValue &&
+                    shiftedFallbackEndRow.HasValue)
+                {
+                    shiftedCell = shiftedCell with
+                    {
+                        Value = FormatFallbackMessage(
+                            plan.FallbackReason,
+                            shiftedFallbackStartRow.Value,
+                            shiftedFallbackEndRow.Value)
+                    };
+                }
+
+                cells.Add(shiftedCell);
+            }
             sections.AddRange(plan.Sections.Select(section => section with
             {
                 StartRow = section.StartRow + offset,
                 EndRow = section.EndRow + offset
             }));
+            if (!fallbackQueryStartRow.HasValue && shiftedFallbackStartRow.HasValue)
+            {
+                fallbackQueryStartRow = shiftedFallbackStartRow;
+                fallbackQueryEndRow = shiftedFallbackEndRow;
+            }
             lastRow = offset + plan.RowCount;
             nextStartRow = lastRow + 2;
         }
@@ -469,7 +498,9 @@ public static class OutputSheetPlanBuilder
             sections,
             lastRow,
             plans.Any(plan => plan.IsFallback),
-            plans.FirstOrDefault(plan => plan.IsFallback)?.FallbackReason);
+            plans.FirstOrDefault(plan => plan.IsFallback)?.FallbackReason,
+            fallbackQueryStartRow,
+            fallbackQueryEndRow);
     }
 
     /// <summary>
@@ -799,7 +830,13 @@ public static class OutputSheetPlanBuilder
             var rightTables = EnumerateNamedTables(join.SecondTableReference).ToArray();
             if (leftTables.Length == 0 || rightTables.Length == 0)
             {
-                throw new UnsupportedOutputException("派生テーブルを含むJOINは未対応");
+                var unsupportedTable = leftTables.Length == 0
+                    ? join.FirstTableReference
+                    : join.SecondTableReference;
+                TSqlFragment causeFragment = unsupportedTable is QueryDerivedTable derivedTable
+                    ? derivedTable.QueryExpression
+                    : unsupportedTable;
+                throw new UnsupportedOutputException("派生テーブルを含むJOINは未対応", causeFragment);
             }
 
             var leftTable = leftTables[^1];
@@ -1137,7 +1174,10 @@ public static class OutputSheetPlanBuilder
     /// <summary>
     /// 未対応SQLを行単位で出力し原因を末尾へ追加
     /// </summary>
-    private static OutputSheetPlan CreateFallback(string sql, string reason)
+    private static OutputSheetPlan CreateFallback(
+        string sql,
+        string reason,
+        TSqlFragment? causeFragment = null)
     {
         var text = sql.Trim('\r', '\n');
         var lines = text.Length == 0
@@ -1150,8 +1190,88 @@ public static class OutputSheetPlanBuilder
             .Select((line, index) => new OutputCell(index + 1, 1, line))
             .ToList();
         var reasonRow = lines.Length == 0 ? 1 : lines.Length + 2;
-        cells.Add(new OutputCell(reasonRow, 1, "フォールバック原因: " + reason));
-        return new OutputSheetPlan(cells, [], reasonRow, true, reason);
+        var (queryStartRow, queryEndRow) = ResolveFallbackQueryRows(
+            sql,
+            lines.Length,
+            causeFragment);
+        var message = queryStartRow.HasValue && queryEndRow.HasValue
+            ? FormatFallbackMessage(reason, queryStartRow.Value, queryEndRow.Value)
+            : "フォールバック原因: " + reason;
+        cells.Add(new OutputCell(reasonRow, 1, message));
+        return new OutputSheetPlan(
+            cells,
+            [],
+            reasonRow,
+            true,
+            reason,
+            queryStartRow,
+            queryEndRow);
+    }
+
+    /// <summary>
+    /// 原因断片をフォールバック出力上の行範囲へ変換
+    /// </summary>
+    private static (int? StartRow, int? EndRow) ResolveFallbackQueryRows(
+        string sql,
+        int outputLineCount,
+        TSqlFragment? causeFragment)
+    {
+        if (outputLineCount == 0)
+        {
+            return (null, null);
+        }
+
+        if (causeFragment is null ||
+            causeFragment.LastTokenIndex < 0 ||
+            causeFragment.LastTokenIndex >= causeFragment.ScriptTokenStream.Count)
+        {
+            return (1, outputLineCount);
+        }
+
+        var removedLeadingLines = CountLeadingLineBreaks(sql);
+        var startRow = Math.Clamp(causeFragment.StartLine - removedLeadingLines, 1, outputLineCount);
+        var endLine = causeFragment.ScriptTokenStream[causeFragment.LastTokenIndex].Line;
+        var endRow = Math.Clamp(endLine - removedLeadingLines, startRow, outputLineCount);
+        return (startRow, endRow);
+    }
+
+    /// <summary>
+    /// 出力時に除去する先頭改行の行数を取得
+    /// </summary>
+    private static int CountLeadingLineBreaks(string sql)
+    {
+        var count = 0;
+        var index = 0;
+        while (index < sql.Length)
+        {
+            if (sql[index] == '\r')
+            {
+                count++;
+                index += index + 1 < sql.Length && sql[index + 1] == '\n' ? 2 : 1;
+            }
+            else if (sql[index] == '\n')
+            {
+                count++;
+                index++;
+            }
+            else
+            {
+                break;
+            }
+        }
+
+        return count;
+    }
+
+    /// <summary>
+    /// 原因とアウトプットシート上の対象行を表示
+    /// </summary>
+    private static string FormatFallbackMessage(string reason, int startRow, int endRow)
+    {
+        var rowText = startRow == endRow
+            ? $"{startRow}行目"
+            : $"{startRow}～{endRow}行目";
+        return $"フォールバック原因: {reason}（対象クエリ: アウトプットシート {rowText}）";
     }
 
     /// <summary>
@@ -1332,7 +1452,12 @@ public static class OutputSheetPlanBuilder
         }
     }
 
-    private sealed class UnsupportedOutputException(string message) : Exception(message);
+    private sealed class UnsupportedOutputException(
+        string message,
+        TSqlFragment? fragment = null) : Exception(message)
+    {
+        public TSqlFragment? Fragment { get; } = fragment;
+    }
 
     private sealed record TransferItem(string Target, string Source, string Method);
 

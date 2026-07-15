@@ -683,7 +683,7 @@ public sealed class OutputSheetPlanBuilderTests
             plan,
             (1, 1, "INSERT INTO users (id)"),
             (2, 1, "VALUES (1)"),
-            (4, 1, "フォールバック原因: 未対応のINSERT形式: VALUES"));
+            (4, 1, "フォールバック原因: 未対応のINSERT形式: VALUES（対象クエリ: アウトプットシート 1～2行目）"));
     }
 
     /// <summary>
@@ -710,8 +710,10 @@ public sealed class OutputSheetPlanBuilderTests
 
         Assert.IsTrue(plan.IsFallback);
         Assert.AreEqual("派生テーブルを含むJOINは未対応", plan.FallbackReason);
+        Assert.AreEqual(6, plan.FallbackQueryStartRow);
+        Assert.AreEqual(9, plan.FallbackQueryEndRow);
         Assert.AreEqual(
-            "フォールバック原因: 派生テーブルを含むJOINは未対応",
+            "フォールバック原因: 派生テーブルを含むJOINは未対応（対象クエリ: アウトプットシート 6～9行目）",
             CellValue(plan, plan.RowCount, 1));
     }
 
