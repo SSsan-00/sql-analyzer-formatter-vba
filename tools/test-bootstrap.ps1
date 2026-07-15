@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$UserBootstrapPath = '',
     [string]$DeveloperBootstrapPath = ''
 )
@@ -25,6 +25,18 @@ function Assert-PathMissing {
 
     if (Test-Path -LiteralPath $Path) {
         throw "Unexpected bootstrap artifact was created: $Path"
+    }
+}
+
+function Assert-FileContains {
+    param(
+        [string]$Path,
+        [string]$ExpectedText
+    )
+
+    $content = [IO.File]::ReadAllText($Path, [Text.Encoding]::UTF8)
+    if (-not $content.Contains($ExpectedText)) {
+        throw "Bootstrap document is missing required text: $ExpectedText"
     }
 }
 
@@ -77,6 +89,10 @@ try {
     Assert-PathExists (Join-Path $userTarget 'SqlAnalysisFormatter.bas')
     Assert-PathExists (Join-Path $userTarget 'SqlAnalysisFormatter.Parser.exe')
     Assert-PathExists (Join-Path $userTarget 'README.md')
+    Assert-FileContains (Join-Path $userTarget 'README.md') '## 最短で使う'
+    Assert-FileContains (Join-Path $userTarget 'README.md') '## 初回セットアップ'
+    Assert-FileContains (Join-Path $userTarget 'README.md') '## 困ったとき'
+    Assert-FileContains (Join-Path $userTarget 'README.md') 'A2、A3、A4のように1行ずつ別セル'
     Assert-PathMissing (Join-Path $userTarget 'SqlAnalysisFormatter.xlsm')
     Assert-PathMissing (Join-Path $userTarget 'src')
     Assert-PathMissing (Join-Path $userTarget 'tests')
