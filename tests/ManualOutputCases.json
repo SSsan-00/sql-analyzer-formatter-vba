@@ -523,6 +523,21 @@
         { "table_id": "tb1", "table_name_ja": "ユーザー", "field_id": "deleted_at", "field_name_ja": "削除日時" },
         { "table_id": "tb1", "table_name_ja": "ユーザー", "field_id": "created_at", "field_name_ja": "作成日時" }
       ]
+    },
+    {
+      "id": "SEL-058",
+      "title": "SELECT DISTINCT",
+      "sql_lines": [
+        "select distinct",
+        "    tb1.status ",
+        "from",
+        "    users as tb1 ",
+        "order by",
+        "    tb1.status"
+      ],
+      "definitions": [
+        { "table_id": "tb1", "table_name_ja": "ユーザー", "field_id": "status", "field_name_ja": "状態" }
+      ]
     }
   ]
 }

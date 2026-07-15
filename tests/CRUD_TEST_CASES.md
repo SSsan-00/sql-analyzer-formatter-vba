@@ -1697,3 +1697,12 @@ ORDER BY内のIIFは分岐へ展開せず、式全体をソートキーとして
 | SEL-057 | WHERE句の検索CASE |
 
 各SQLはScriptDomで構文エラーがないことと、A5M2 `Ctrl+Q`の実整形結果を確認済みです。
+
+## 追加期待値作成予定
+
+| ケース | 内容 | 状態 |
+| --- | --- | --- |
+| SEL-058 | SELECT DISTINCT | レビュー待ち |
+| SEL-059 | SELECT INTO | 未着手 |
+| SEL-060 | INSERT VALUES | 未着手 |
+| SEL-062 | UPDATE SET内のサブクエリ | 未着手 |
