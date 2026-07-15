@@ -31,6 +31,7 @@ Public Sub SetupWorkbook()
     RestoreHeaders wsRef, wsSql
     ApplyOutputSheetLayout wsOutput
     InstallButtons wsSql
+    InstallOutputButton wsOutput
 End Sub
 
 ' SQL解析シートのA列を変換し、B列以降へ結果を出力
@@ -47,6 +48,7 @@ Public Sub AnalyzeQueries(Optional ByVal showMessage As Boolean = True)
     Dim sourceText As String
     Dim convertedText As String
     Dim convertedQueryText As String
+    Dim fallbackReason As String
     Dim replacementValues As Object
 
     Set wsRef = GetReferenceSheet()
@@ -86,8 +88,8 @@ Public Sub AnalyzeQueries(Optional ByVal showMessage As Boolean = True)
     Next rowNumber
 
     If Len(convertedQueryText) > 0 Then
-        If Not TryWriteExternalOutputPlan(wsOutput, wsRef, convertedQueryText) Then
-            WriteOutputQueryBlocks wsOutput, 1, convertedQueryText
+        If Not TryWriteExternalOutputPlan(wsOutput, wsRef, convertedQueryText, fallbackReason) Then
+            WriteFallbackOutput wsOutput, convertedQueryText, fallbackReason
         End If
     End If
 
@@ -420,6 +422,42 @@ Private Sub ApplyOutputSheetLayout(ByVal ws As Worksheet)
     ApplyOutputSheetView ws
 End Sub
 
+' アウトプットシートの成果物をA列からCL列までコピー
+Public Sub CopyOutput(Optional ByVal showMessage As Boolean = True)
+    Dim wsOutput As Worksheet
+    Dim outputCells As Range
+    Dim lastRow As Long
+    Dim errorNumber As Long
+    Dim errorDescription As String
+
+    On Error GoTo CopyFail
+
+    Set wsOutput = GetOutputSheet()
+    Set outputCells = UsedValueCells(wsOutput)
+    If outputCells Is Nothing Then
+        If showMessage Then
+            MsgBox NoOutputToCopyMessage(), vbInformation
+        End If
+        Exit Sub
+    End If
+
+    lastRow = LastUsedRow(wsOutput)
+    wsOutput.Range(wsOutput.Cells(1, 1), wsOutput.Cells(lastRow, OUTPUT_LAST_COLUMN)).Copy
+    If showMessage Then
+        MsgBox CopyDoneMessage(), vbInformation
+    End If
+    Exit Sub
+
+CopyFail:
+    errorNumber = Err.Number
+    errorDescription = Err.Description
+    If showMessage Then
+        MsgBox CopyFailedMessage() & errorDescription, vbExclamation
+    Else
+        Err.Raise errorNumber, "CopyOutput", errorDescription
+    End If
+End Sub
+
 ' アウトプットシートの既定フォントを設定
 Private Sub ApplyOutputSheetFont(ByVal ws As Worksheet)
     With ws.Cells.Font
@@ -610,11 +648,30 @@ Private Sub WriteReplacementValues(ByVal wsSql As Worksheet, ByVal rowNumber As 
     Next index
 End Sub
 
+' アウトプットシートへコピーボタンを配置
+Private Sub InstallOutputButton(ByVal ws As Worksheet)
+    Dim copyButton As Object
+    Dim buttonLeft As Double
+    Dim buttonTop As Double
+
+    DeleteShapeIfExists ws, "btnCopyOutput"
+    buttonLeft = ws.Columns(OUTPUT_LAST_COLUMN + 1).Left + 4
+    buttonTop = ws.Rows(1).Top + 2
+
+    Set copyButton = ws.Buttons.Add(buttonLeft, buttonTop, 72, 24)
+    With copyButton
+        .Name = "btnCopyOutput"
+        .Caption = CopyButtonText()
+        .OnAction = "CopyOutput"
+    End With
+End Sub
+
 ' 外部parserの描画計画をアウトプットシートへ反映
 Private Function TryWriteExternalOutputPlan( _
     ByVal wsOutput As Worksheet, _
     ByVal wsRef As Worksheet, _
-    ByVal queryText As String) As Boolean
+    ByVal queryText As String, _
+    ByRef fallbackReason As String) As Boolean
 
     Dim parserPath As String
     Dim inputPath As String
@@ -622,11 +679,16 @@ Private Function TryWriteExternalOutputPlan( _
     Dim outputPath As String
     Dim exitCode As Long
     Dim outputText As String
+    Dim succeeded As Boolean
 
-    On Error GoTo CleanUp
+    On Error GoTo ParserError
+    fallbackReason = ""
 
     parserPath = ResolveParserExePath()
-    If Len(parserPath) = 0 Then Exit Function
+    If Len(parserPath) = 0 Then
+        fallbackReason = ParserNotFoundReason()
+        GoTo CleanUp
+    End If
 
     inputPath = TemporaryFilePath("saf_sql_", ".sql")
     mappingPath = TemporaryFilePath("saf_mapping_", ".txt")
@@ -635,15 +697,33 @@ Private Function TryWriteExternalOutputPlan( _
     WriteMappingDefinitionFile mappingPath, wsRef
 
     exitCode = RunParserPlanProcess(parserPath, inputPath, mappingPath, outputPath)
-    If exitCode <> 0 Or Not FileExists(outputPath) Then GoTo CleanUp
+    If exitCode <> 0 Then
+        fallbackReason = ParserExitCodeReason(exitCode)
+        GoTo CleanUp
+    End If
+    If Not FileExists(outputPath) Then
+        fallbackReason = ParserOutputMissingReason()
+        GoTo CleanUp
+    End If
 
     outputText = ReadUnicodeTextFile(outputPath)
-    TryWriteExternalOutputPlan = ApplyOutputPlan(wsOutput, outputText)
+    succeeded = ApplyOutputPlan(wsOutput, outputText)
+    If Not succeeded Then
+        fallbackReason = ParserOutputInvalidReason()
+    End If
 
 CleanUp:
+    On Error Resume Next
     DeleteFileIfExists inputPath
     DeleteFileIfExists mappingPath
     DeleteFileIfExists outputPath
+    On Error GoTo 0
+    TryWriteExternalOutputPlan = succeeded
+    Exit Function
+
+ParserError:
+    fallbackReason = ParserIntegrationErrorReason(Err.Description)
+    Resume CleanUp
 End Function
 
 ' 変換定義シートをparser連携用の行形式で保存
@@ -723,6 +803,7 @@ Private Function ApplyOutputPlan(ByVal ws As Worksheet, ByVal planText As String
                     rowNumber = CLng(fields(1))
                     columnNumber = CLng(fields(2))
                     If rowNumber < 1 Or columnNumber < 1 Or columnNumber > OUTPUT_LAST_COLUMN Then GoTo InvalidPlan
+                    ws.Cells(rowNumber, columnNumber).NumberFormat = "@"
                     ws.Cells(rowNumber, columnNumber).Value = UnescapeProtocolField(CStr(fields(3)))
                 Case "S"
                     If Not IsNumeric(fields(2)) Or Not IsNumeric(fields(3)) Then GoTo InvalidPlan
@@ -880,6 +961,43 @@ Private Function UnescapeProtocolField(ByVal value As String) As String
     Loop
 
     UnescapeProtocolField = resultText
+End Function
+
+' フォールバックSQLを行単位で出力し末尾へ原因を追加
+Private Sub WriteFallbackOutput(ByVal wsOutput As Worksheet, ByVal queryText As String, ByVal reason As String)
+    Dim lines As Variant
+    Dim normalizedText As String
+    Dim lineIndex As Long
+    Dim reasonRow As Long
+
+    ClearOutputSheet wsOutput
+    normalizedText = Replace(queryText, vbCrLf, vbLf)
+    normalizedText = Replace(normalizedText, vbCr, vbLf)
+    normalizedText = TrimOuterLineBreaks(normalizedText)
+    lines = Split(normalizedText, vbLf)
+    wsOutput.Range(wsOutput.Cells(1, 1), wsOutput.Cells(UBound(lines) - LBound(lines) + 1, 1)).NumberFormat = "@"
+
+    For lineIndex = LBound(lines) To UBound(lines)
+        wsOutput.Cells(lineIndex - LBound(lines) + 1, 1).Value = CStr(lines(lineIndex))
+    Next lineIndex
+
+    reasonRow = UBound(lines) - LBound(lines) + 3
+    wsOutput.Cells(reasonRow, 1).Value = FallbackReasonPrefix() & reason
+    ApplyOutputSheetDimensions wsOutput, reasonRow
+    ApplyOutputSheetFont wsOutput
+    ApplyOutputSheetView wsOutput
+End Sub
+
+' 文字列の先頭と末尾にある改行だけを除去
+Private Function TrimOuterLineBreaks(ByVal value As String) As String
+    Do While Len(value) > 0 And Left$(value, 1) = vbLf
+        value = Mid$(value, 2)
+    Loop
+    Do While Len(value) > 0 And Right$(value, 1) = vbLf
+        value = Left$(value, Len(value) - 1)
+    Loop
+
+    TrimOuterLineBreaks = value
 End Function
 
 ' アウトプットシートへクエリブロックを順に出力
@@ -1425,6 +1543,46 @@ Private Function ClearButtonText() As String
     ClearButtonText = W(&H30AF, &H30EA, &H30A2)
 End Function
 
+' コピーボタンの表示文字を取得
+Private Function CopyButtonText() As String
+    CopyButtonText = W(&H30B3, &H30D4, &H30FC)
+End Function
+
+' フォールバック原因の見出しを取得
+Private Function FallbackReasonPrefix() As String
+    FallbackReasonPrefix = W(&H30D5, &H30A9, &H30FC, &H30EB, &H30D0, &H30C3, &H30AF, &H539F, &H56E0) & ": "
+End Function
+
+' parser未配置時の原因を取得
+Private Function ParserNotFoundReason() As String
+    ParserNotFoundReason = "parser EXE" & W(&H304C, &H898B, &H3064, &H304B, &H308A, &H307E, &H305B, &H3093, &H3002)
+End Function
+
+' parser異常終了時の原因を取得
+Private Function ParserExitCodeReason(ByVal exitCode As Long) As String
+    ParserExitCodeReason = "parser EXE" & _
+        W(&H306E, &H5B9F, &H884C, &H306B, &H5931, &H6557, &H3057, &H307E, &H3057, &H305F, &H3002, &H7D42, &H4E86, &H30B3, &H30FC, &H30C9) & _
+        ": " & CStr(exitCode)
+End Function
+
+' parser出力ファイル未生成時の原因を取得
+Private Function ParserOutputMissingReason() As String
+    ParserOutputMissingReason = "parser EXE" & _
+        W(&H306E, &H51FA, &H529B, &H30D5, &H30A1, &H30A4, &H30EB, &H304C, &H898B, &H3064, &H304B, &H308A, &H307E, &H305B, &H3093, &H3002)
+End Function
+
+' parser出力形式不正時の原因を取得
+Private Function ParserOutputInvalidReason() As String
+    ParserOutputInvalidReason = "parser EXE" & _
+        W(&H306E, &H51FA, &H529B, &H5F62, &H5F0F, &H304C, &H4E0D, &H6B63, &H3067, &H3059, &H3002)
+End Function
+
+' parser連携例外の原因を取得
+Private Function ParserIntegrationErrorReason(ByVal description As String) As String
+    ParserIntegrationErrorReason = "parser EXE" & _
+        W(&H3068, &H306E, &H9023, &H643A, &H4E2D, &H306B, &H30A8, &H30E9, &H30FC) & ": " & description
+End Function
+
 ' 和名未取得判定用の文字列を取得
 Private Function MissingNameText() As String
     MissingNameText = W(&H548C, &H540D, &H672A, &H53D6, &H5F97)
@@ -1433,6 +1591,21 @@ End Function
 ' 解析完了メッセージを取得
 Private Function AnalyzeDoneMessage() As String
     AnalyzeDoneMessage = W(&H89E3, &H6790, &H304C, &H5B8C, &H4E86, &H3057, &H307E, &H3057, &H305F, &H3002)
+End Function
+
+' コピー完了メッセージを取得
+Private Function CopyDoneMessage() As String
+    CopyDoneMessage = W(&H30A2, &H30A6, &H30C8, &H30D7, &H30C3, &H30C8, &H3092, &H30AF, &H30EA, &H30C3, &H30D7, &H30DC, &H30FC, &H30C9, &H306B, &H30B3, &H30D4, &H30FC, &H3057, &H307E, &H3057, &H305F, &H3002)
+End Function
+
+' コピー対象なしメッセージを取得
+Private Function NoOutputToCopyMessage() As String
+    NoOutputToCopyMessage = W(&H30B3, &H30D4, &H30FC, &H3059, &H308B, &H6210, &H679C, &H7269, &H304C, &H3042, &H308A, &H307E, &H305B, &H3093, &H3002)
+End Function
+
+' コピー失敗メッセージを取得
+Private Function CopyFailedMessage() As String
+    CopyFailedMessage = W(&H30B3, &H30D4, &H30FC, &H306B, &H5931, &H6557, &H3057, &H307E, &H3057, &H305F) & ": "
 End Function
 
 ' クリア完了メッセージを取得

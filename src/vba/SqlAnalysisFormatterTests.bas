@@ -14,6 +14,7 @@ Public Sub RunAllSqlAnalysisFormatterTests(Optional ByVal showMessage As Boolean
     On Error GoTo TestFail
 
     SetupWorkbook_CreatesOutputSheet
+    CopyOutput_CopiesRenderedRange
     AnalyzeQueries_ConvertsCrudFixtures
     AnalyzeQueries_ConvertsTsqlFunctionFixtures
     AnalyzeQueries_WritesWithSubqueriesInsideOut
@@ -46,11 +47,33 @@ End Function
 
 '@TestMethod("SetupWorkbook")
 Public Sub SetupWorkbook_CreatesOutputSheet()
+    Dim wsOutput As Worksheet
+
     SetupWorkbook
 
     AssertWorksheetExists OutputSheetName()
+    Set wsOutput = ThisWorkbook.Worksheets(OutputSheetName())
+    AssertOutputCopyButton wsOutput
     AssertOutputSheetGridlinesHidden
     AssertOutputSheetFont
+End Sub
+
+'@TestMethod("CopyOutput")
+Public Sub CopyOutput_CopiesRenderedRange()
+    Dim wsOutput As Worksheet
+
+    SetupWorkbook
+    Set wsOutput = ThisWorkbook.Worksheets(OutputSheetName())
+    wsOutput.Cells(1, 1).Value = "copy target"
+    wsOutput.Cells(2, 90).Value = "last column"
+    Application.CutCopyMode = False
+
+    CopyOutput False
+
+    If Application.CutCopyMode <> xlCopy Then
+        Fail "Output range was not copied."
+    End If
+    Application.CutCopyMode = False
 End Sub
 
 '@TestMethod("AnalyzeQueries")
@@ -141,10 +164,7 @@ Public Sub AnalyzeQueries_WritesWithSubqueriesInsideOut()
         AssertCellValue wsOutput.Cells(19, 1), ""
         AssertFormattedOutputLayout wsOutput
     Else
-        AssertCellValue wsOutput.Cells(1, 1), ExpectedOutputNestedInnerSubquerySql()
-        AssertCellValue wsOutput.Cells(2, 1), ExpectedOutputNestedOuterSubquerySql()
-        AssertCellValue wsOutput.Cells(3, 1), ExpectedOutputNestedWholeSql()
-        AssertCellValue wsOutput.Cells(4, 1), ""
+        AssertFallbackLines wsOutput, CStr(wsSql.Cells(2, COL_RESULT).Value), ExpectedParserNotFoundReason()
     End If
 End Sub
 
@@ -156,8 +176,14 @@ Public Sub AnalyzeQueries_WritesUnsupportedQueryAsIs()
     AnalyzeQueries False
 
     Set wsOutput = ThisWorkbook.Worksheets(OutputSheetName())
-    AssertCellValue wsOutput.Cells(1, 1), ExpectedOutputUnsupportedSql()
-    AssertCellValue wsOutput.Cells(2, 1), ""
+    AssertCellValue wsOutput.Cells(1, 1), "exec dbo.refresh_user_summary"
+    AssertCellValue wsOutput.Cells(2, 1), "    @target_date = '2026-07-12'"
+    AssertCellValue wsOutput.Cells(3, 1), ""
+    If ExternalParserConfigured() Then
+        AssertCellValue wsOutput.Cells(4, 1), ExpectedUnsupportedStatementReason()
+    Else
+        AssertCellValue wsOutput.Cells(4, 1), ExpectedParserNotFoundReason()
+    End If
 End Sub
 
 '@TestMethod("ClearData")
@@ -1159,6 +1185,46 @@ Private Sub AssertOutputSheetFont()
     AssertCellFont wsOutput.Cells(20, 5), OutputFontName(), 9
 End Sub
 
+' アウトプットシートのコピーボタンを検証
+Private Sub AssertOutputCopyButton(ByVal wsOutput As Worksheet)
+    Dim copyButton As Shape
+
+    On Error Resume Next
+    Set copyButton = wsOutput.Shapes("btnCopyOutput")
+    On Error GoTo 0
+    If copyButton Is Nothing Then
+        Fail "Output copy button was not found."
+    End If
+    If Right$(CStr(copyButton.OnAction), Len("CopyOutput")) <> "CopyOutput" Then
+        Fail "Output copy button action is invalid."
+    End If
+End Sub
+
+' フォールバックSQLの行と原因を検証
+Private Sub AssertFallbackLines(ByVal wsOutput As Worksheet, ByVal queryText As String, ByVal expectedReason As String)
+    Dim lines As Variant
+    Dim normalizedText As String
+    Dim lineIndex As Long
+    Dim reasonRow As Long
+
+    normalizedText = Replace(queryText, vbCrLf, vbLf)
+    normalizedText = Replace(normalizedText, vbCr, vbLf)
+    Do While Len(normalizedText) > 0 And Left$(normalizedText, 1) = vbLf
+        normalizedText = Mid$(normalizedText, 2)
+    Loop
+    Do While Len(normalizedText) > 0 And Right$(normalizedText, 1) = vbLf
+        normalizedText = Left$(normalizedText, Len(normalizedText) - 1)
+    Loop
+    lines = Split(normalizedText, vbLf)
+    For lineIndex = LBound(lines) To UBound(lines)
+        AssertCellValue wsOutput.Cells(lineIndex - LBound(lines) + 1, 1), CStr(lines(lineIndex))
+    Next lineIndex
+
+    reasonRow = UBound(lines) - LBound(lines) + 3
+    AssertCellValue wsOutput.Cells(reasonRow - 1, 1), ""
+    AssertCellValue wsOutput.Cells(reasonRow, 1), expectedReason
+End Sub
+
 ' parser出力の共通書式を確認
 Private Sub AssertFormattedOutputLayout(ByVal wsOutput As Worksheet)
     If CLng(wsOutput.Cells(3, 1).Interior.Color) <> OUTPUT_FILL_COLOR Then
@@ -1250,6 +1316,20 @@ End Function
 ' SELECT系表のタイトルを返す
 Private Function SelectOutputTitle() As String
     SelectOutputTitle = W(&HFF1C) & "DB" & W(&H5165, &H51FA, &H529B, &H9805, &H76EE, &H5B9A, &H7FA9, &HFF1E)
+End Function
+
+' 未対応ステートメントのフォールバック原因を返す
+Private Function ExpectedUnsupportedStatementReason() As String
+    ExpectedUnsupportedStatementReason = _
+        W(&H30D5, &H30A9, &H30FC, &H30EB, &H30D0, &H30C3, &H30AF, &H539F, &H56E0) & ": " & _
+        W(&H672A, &H5BFE, &H5FDC, &H306E, &H30B9, &H30C6, &H30FC, &H30C8, &H30E1, &H30F3, &H30C8) & ": EXECUTE"
+End Function
+
+' parser未配置時のフォールバック原因を返す
+Private Function ExpectedParserNotFoundReason() As String
+    ExpectedParserNotFoundReason = _
+        W(&H30D5, &H30A9, &H30FC, &H30EB, &H30D0, &H30C3, &H30AF, &H539F, &H56E0) & ": parser EXE" & _
+        W(&H304C, &H898B, &H3064, &H304B, &H308A, &H307E, &H305B, &H3093, &H3002)
 End Function
 
 ' ユーザーテーブル和名を返す
