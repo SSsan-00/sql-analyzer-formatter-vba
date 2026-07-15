@@ -28,4 +28,5 @@ public sealed record OutputSheetPlan(
     IReadOnlyList<OutputCell> Cells,
     IReadOnlyList<OutputSection> Sections,
     int RowCount,
-    bool IsFallback);
+    bool IsFallback,
+    string? FallbackReason = null);

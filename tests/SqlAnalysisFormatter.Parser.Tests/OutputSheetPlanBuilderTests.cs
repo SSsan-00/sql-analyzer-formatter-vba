@@ -576,14 +576,123 @@ public sealed class OutputSheetPlanBuilderTests
             (3, 19, "移送元"),
             (3, 37, "移送方法ほか"),
             (4, 1, "状態"),
-            (4, 19, "@status"),
+            (4, 37, "@status"),
             (5, 1, "更新日時"),
-            (5, 19, "sysdatetime()"),
+            (5, 37, "sysdatetime()"),
             (6, 1, "結合条件"),
             (6, 17, "＜ユーザー[tb1] INNER JOIN 注文[tb2]＞"),
             (7, 17, "tb1.ユーザーID = tb2.注文ユーザーID"),
             (8, 1, "検索条件"),
             (8, 17, "tb2.状態 = @order_status"));
+    }
+
+    /// <summary>
+    /// テーブル列を参照する更新式は移送元へ出力することを確認
+    /// </summary>
+    [TestMethod]
+    public void Build_WritesColumnBasedUpdateExpressionAsTransferSource()
+    {
+        const string sql = """
+            UPDATE tb1
+            SET
+                氏名 = tb2.氏名
+            FROM
+                users AS tb1
+                INNER JOIN import_users AS tb2
+                    ON tb1.ユーザーID = tb2.ユーザーID
+            """;
+        MappingDefinition[] mappings =
+        [
+            new("tb1", "ユーザー", "name", "氏名"),
+            new("tb2", "取込ユーザー", "name", "氏名")
+        ];
+
+        var plan = OutputSheetPlanBuilder.Build(sql, mappings);
+
+        Assert.AreEqual("tb2.氏名", CellValue(plan, 4, 19));
+        Assert.IsNull(CellValue(plan, 4, 37));
+    }
+
+    /// <summary>
+    /// 一時テーブルの物理名から和名を解決することを確認
+    /// </summary>
+    [TestMethod]
+    public void Build_ResolvesAliasedTemporaryTableByPhysicalName()
+    {
+        const string sql = """
+            SELECT
+                t.ID
+            FROM
+                #users AS t
+            """;
+        MappingDefinition[] mappings =
+        [
+            new("#users", "一時ユーザー", "id", "ID")
+        ];
+
+        var plan = OutputSheetPlanBuilder.Build(sql, mappings);
+
+        Assert.IsFalse(plan.IsFallback);
+        Assert.AreEqual("参照テーブル: 一時ユーザー[t]", CellValue(plan, 2, 1));
+    }
+
+    /// <summary>
+    /// 未対応SQLを行単位で出力しフォールバック原因を添えることを確認
+    /// </summary>
+    [TestMethod]
+    public void Build_WritesUnsupportedSqlByLineWithFallbackReason()
+    {
+        const string sql = "INSERT INTO users (id)\r\nVALUES (1)";
+
+        var plan = OutputSheetPlanBuilder.Build(sql, []);
+
+        Assert.IsTrue(plan.IsFallback);
+        Assert.AreEqual("未対応のINSERT形式: VALUES", plan.FallbackReason);
+        Assert.AreEqual(4, plan.RowCount);
+        AssertCells(
+            plan,
+            (1, 1, "INSERT INTO users (id)"),
+            (2, 1, "VALUES (1)"),
+            (4, 1, "フォールバック原因: 未対応のINSERT形式: VALUES"));
+    }
+
+    /// <summary>
+    /// 派生テーブルJOINを例外にせず原因付きフォールバックへ変換することを確認
+    /// </summary>
+    [TestMethod]
+    public void Build_FallsBackForDerivedTableJoinWithoutThrowing()
+    {
+        const string sql = """
+            SELECT
+                tb1.ID
+            FROM
+                users AS tb1
+                INNER JOIN (
+                    SELECT
+                        user_id
+                    FROM
+                        orders
+                ) AS sq
+                    ON tb1.ID = sq.user_id
+            """;
+
+        var plan = OutputSheetPlanBuilder.Build(sql, []);
+
+        Assert.IsTrue(plan.IsFallback);
+        Assert.AreEqual("派生テーブルを含むJOINは未対応", plan.FallbackReason);
+        Assert.AreEqual(
+            "フォールバック原因: 派生テーブルを含むJOINは未対応",
+            CellValue(plan, plan.RowCount, 1));
+    }
+
+    /// <summary>
+    /// 指定セルの値を取得
+    /// </summary>
+    private static string? CellValue(OutputSheetPlan plan, int row, int column)
+    {
+        return plan.Cells
+            .SingleOrDefault(cell => cell.Row == row && cell.Column == column)
+            ?.Value;
     }
 
     /// <summary>
