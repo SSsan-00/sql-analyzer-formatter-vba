@@ -10,6 +10,8 @@
 - `tests/CRUD_TEST_CASES.md`: SQL 変換ケース資料
 - `tests/OutputReportCases.json`: 確定済み47ケースの入力 SQL と和名定義
 - `tests/SqlAnalysisFormatter.OutputExpectations.xlsx`: 確定済み47ケースの期待値ブック
+- `tests/ManualOutputCases.json`: 確定済みケースとユーザーレビュー待ちケースの入力 SQL・和名定義
+- `tools/Set-ManualOutputCase.ps1`: 指定ケースをマクロブックへ投入して期待値作成を開始するスクリプト
 - `tools/run-output-golden-tests.ps1`: 実 Excel による値・書式回帰テスト
 
 ## テスト
@@ -34,6 +36,16 @@ powershell -ExecutionPolicy Bypass -File tools/run-output-golden-tests.ps1
 
 `test-bootstrap.ps1`は、ユーザー向けREADMEに導入、初回セットアップ、トラブル対応の各セクションが含まれることも確認します。
 利用手順を変更した場合は、`README.md`と`docs/USER_GUIDE.md`を同時に更新します。
+
+## 期待値レビュー
+
+レビュー待ちケースは`ManualOutputCases.json`へSQLと和名定義だけを登録し、期待値を推測で確定しません。次のコマンドで対象ケースをブックへ投入し、利用者が`アウトプット`シートへ期待値を記入します。
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools/Set-ManualOutputCase.ps1 -CaseId SEL-048
+```
+
+レビュー後は期待値ブック、`OutputReportCases.json`、C#回帰テストへ追加し、RED・GREEN・リファクタリングの順で実装します。
 
 ## Publish
 

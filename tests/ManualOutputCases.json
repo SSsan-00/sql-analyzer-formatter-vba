@@ -219,6 +219,276 @@
         { "table_id": "tb2", "table_name_ja": "注文", "field_id": "user_id", "field_name_ja": "注文ユーザーID" },
         { "table_id": "tb2", "table_name_ja": "注文", "field_id": "status", "field_name_ja": "状態" }
       ]
+    },
+    {
+      "id": "SEL-048",
+      "title": "SELECT FROM VALUES",
+      "sql_lines": [
+        "select",
+        "    v.user_id",
+        "    , v.name ",
+        "from",
+        "    (values (1, 'Alice'), (2, 'Bob')) as v(user_id, name) ",
+        "order by",
+        "    v.user_id"
+      ],
+      "definitions": [
+        { "table_id": "v", "table_name_ja": "(和名未取得)", "field_id": "user_id", "field_name_ja": "ユーザーID" },
+        { "table_id": "v", "table_name_ja": "(和名未取得)", "field_id": "name", "field_name_ja": "氏名" }
+      ]
+    },
+    {
+      "id": "SEL-049",
+      "title": "ネストしたCASE",
+      "sql_lines": [
+        "select",
+        "    tb1.user_id",
+        "    , case",
+        "        when tb1.status = 'ACTIVE' then",
+        "            case",
+        "                when tb1.rank_code = 'VIP' then '優良'",
+        "                else '通常'",
+        "            end",
+        "        when tb1.status = 'LOCKED' then '停止'",
+        "        else '無効'",
+        "    end as user_category ",
+        "from",
+        "    users as tb1"
+      ],
+      "definitions": [
+        { "table_id": "tb1", "table_name_ja": "ユーザー", "field_id": "user_id", "field_name_ja": "ユーザーID" },
+        { "table_id": "tb1", "table_name_ja": "ユーザー", "field_id": "status", "field_name_ja": "状態" },
+        { "table_id": "tb1", "table_name_ja": "ユーザー", "field_id": "rank_code", "field_name_ja": "ランクコード" }
+      ]
+    },
+    {
+      "id": "SEL-050",
+      "title": "GROUP BY CASE",
+      "sql_lines": [
+        "select",
+        "    case",
+        "        when tb1.amount >= 10000 then 'HIGH'",
+        "        else 'NORMAL'",
+        "    end as amount_band",
+        "    , count(tb1.order_id) as order_count ",
+        "from",
+        "    orders as tb1 ",
+        "group by",
+        "    case",
+        "        when tb1.amount >= 10000 then 'HIGH'",
+        "        else 'NORMAL'",
+        "    end"
+      ],
+      "definitions": [
+        { "table_id": "tb1", "table_name_ja": "注文", "field_id": "amount", "field_name_ja": "金額" },
+        { "table_id": "tb1", "table_name_ja": "注文", "field_id": "order_id", "field_name_ja": "注文ID" }
+      ]
+    },
+    {
+      "id": "SEL-051",
+      "title": "ORDER BY CASE",
+      "sql_lines": [
+        "select",
+        "    tb1.user_id",
+        "    , tb1.name",
+        "    , tb1.status ",
+        "from",
+        "    users as tb1 ",
+        "order by",
+        "    case",
+        "        when tb1.status = 'ACTIVE' then 0",
+        "        when tb1.status = 'LOCKED' then 1",
+        "        else 2",
+        "    end",
+        "    , tb1.user_id"
+      ],
+      "definitions": [
+        { "table_id": "tb1", "table_name_ja": "ユーザー", "field_id": "user_id", "field_name_ja": "ユーザーID" },
+        { "table_id": "tb1", "table_name_ja": "ユーザー", "field_id": "name", "field_name_ja": "氏名" },
+        { "table_id": "tb1", "table_name_ja": "ユーザー", "field_id": "status", "field_name_ja": "状態" }
+      ]
+    },
+    {
+      "id": "SEL-052",
+      "title": "ORDER BY IIF",
+      "sql_lines": [
+        "select",
+        "    tb1.user_id",
+        "    , tb1.name",
+        "    , tb1.deleted_at ",
+        "from",
+        "    users as tb1 ",
+        "order by",
+        "    iif(tb1.deleted_at is null, 0, 1)",
+        "    , tb1.user_id desc"
+      ],
+      "definitions": [
+        { "table_id": "tb1", "table_name_ja": "ユーザー", "field_id": "user_id", "field_name_ja": "ユーザーID" },
+        { "table_id": "tb1", "table_name_ja": "ユーザー", "field_id": "name", "field_name_ja": "氏名" },
+        { "table_id": "tb1", "table_name_ja": "ユーザー", "field_id": "deleted_at", "field_name_ja": "削除日時" }
+      ]
+    },
+    {
+      "id": "SEL-053",
+      "title": "多段の複雑な条件式",
+      "sql_lines": [
+        "select",
+        "    tb1.user_id",
+        "    , tb1.name ",
+        "from",
+        "    users as tb1 ",
+        "where",
+        "    (",
+        "        (tb1.status in ('ACTIVE', 'LOCKED') and (tb1.email like @domain or tb1.name like @name))",
+        "        or (tb1.status = 'PENDING' and tb1.deleted_at is null)",
+        "    )",
+        "    and (",
+        "        tb1.created_at >= dateadd(day, -30, @base_date)",
+        "        or (tb1.updated_at is null and tb1.email is not null)",
+        "    )",
+        "    and not (",
+        "        tb1.user_id between @excluded_from and @excluded_to",
+        "        or coalesce(tb1.manager_id, 0) = @excluded_manager_id",
+        "    )"
+      ],
+      "definitions": [
+        { "table_id": "tb1", "table_name_ja": "ユーザー", "field_id": "user_id", "field_name_ja": "ユーザーID" },
+        { "table_id": "tb1", "table_name_ja": "ユーザー", "field_id": "name", "field_name_ja": "氏名" },
+        { "table_id": "tb1", "table_name_ja": "ユーザー", "field_id": "status", "field_name_ja": "状態" },
+        { "table_id": "tb1", "table_name_ja": "ユーザー", "field_id": "email", "field_name_ja": "メール" },
+        { "table_id": "tb1", "table_name_ja": "ユーザー", "field_id": "deleted_at", "field_name_ja": "削除日時" },
+        { "table_id": "tb1", "table_name_ja": "ユーザー", "field_id": "created_at", "field_name_ja": "作成日時" },
+        { "table_id": "tb1", "table_name_ja": "ユーザー", "field_id": "updated_at", "field_name_ja": "更新日時" },
+        { "table_id": "tb1", "table_name_ja": "ユーザー", "field_id": "manager_id", "field_name_ja": "上司ID" }
+      ]
+    },
+    {
+      "id": "SEL-054",
+      "title": "複雑な派生テーブルJOIN",
+      "sql_lines": [
+        "select",
+        "    tb1.user_id",
+        "    , tb1.name",
+        "    , sq.total_amount",
+        "    , sq.last_order_at ",
+        "from",
+        "    users as tb1 ",
+        "    inner join (",
+        "        select",
+        "            tb2.user_id",
+        "            , sum(tb2.amount) as total_amount",
+        "            , max(tb2.created_at) as last_order_at ",
+        "        from",
+        "            orders as tb2 ",
+        "        where",
+        "            tb2.status in ('PAID', 'SHIPPED') ",
+        "        group by",
+        "            tb2.user_id ",
+        "        having",
+        "            sum(tb2.amount) >= @min_total",
+        "    ) as sq",
+        "        on tb1.user_id = sq.user_id",
+        "        and sq.last_order_at >= dateadd(day, -90, @base_date) ",
+        "where",
+        "    tb1.status = 'ACTIVE' ",
+        "order by",
+        "    sq.total_amount desc"
+      ],
+      "definitions": [
+        { "table_id": "tb1", "table_name_ja": "ユーザー", "field_id": "user_id", "field_name_ja": "ユーザーID" },
+        { "table_id": "tb1", "table_name_ja": "ユーザー", "field_id": "name", "field_name_ja": "氏名" },
+        { "table_id": "tb1", "table_name_ja": "ユーザー", "field_id": "status", "field_name_ja": "状態" },
+        { "table_id": "tb2", "table_name_ja": "注文", "field_id": "user_id", "field_name_ja": "注文ユーザーID" },
+        { "table_id": "tb2", "table_name_ja": "注文", "field_id": "amount", "field_name_ja": "金額" },
+        { "table_id": "tb2", "table_name_ja": "注文", "field_id": "created_at", "field_name_ja": "注文日時" },
+        { "table_id": "tb2", "table_name_ja": "注文", "field_id": "status", "field_name_ja": "状態" },
+        { "table_id": "sq", "table_name_ja": "(和名未取得)", "field_id": "user_id", "field_name_ja": "注文ユーザーID" },
+        { "table_id": "sq", "table_name_ja": "(和名未取得)", "field_id": "total_amount", "field_name_ja": "合計金額" },
+        { "table_id": "sq", "table_name_ja": "(和名未取得)", "field_id": "last_order_at", "field_name_ja": "最終注文日時" }
+      ]
+    },
+    {
+      "id": "SEL-055",
+      "title": "ネストしたサブクエリ",
+      "sql_lines": [
+        "select",
+        "    tb1.user_id",
+        "    , tb1.name ",
+        "from",
+        "    users as tb1 ",
+        "where",
+        "    exists (",
+        "        select",
+        "            1 ",
+        "        from",
+        "            orders as tb2 ",
+        "        where",
+        "            tb2.user_id = tb1.user_id",
+        "            and tb2.amount > (",
+        "                select",
+        "                    avg(tb3.amount) ",
+        "                from",
+        "                    orders as tb3 ",
+        "                where",
+        "                    tb3.status = tb2.status",
+        "            )",
+        "    )"
+      ],
+      "definitions": [
+        { "table_id": "tb1", "table_name_ja": "ユーザー", "field_id": "user_id", "field_name_ja": "ユーザーID" },
+        { "table_id": "tb1", "table_name_ja": "ユーザー", "field_id": "name", "field_name_ja": "氏名" },
+        { "table_id": "tb2", "table_name_ja": "注文", "field_id": "user_id", "field_name_ja": "注文ユーザーID" },
+        { "table_id": "tb2", "table_name_ja": "注文", "field_id": "amount", "field_name_ja": "金額" },
+        { "table_id": "tb2", "table_name_ja": "注文", "field_id": "status", "field_name_ja": "状態" },
+        { "table_id": "tb3", "table_name_ja": "注文", "field_id": "amount", "field_name_ja": "金額" },
+        { "table_id": "tb3", "table_name_ja": "注文", "field_id": "status", "field_name_ja": "状態" }
+      ]
+    },
+    {
+      "id": "SEL-056",
+      "title": "拡張INSERT SELECT",
+      "sql_lines": [
+        "insert ",
+        "into user_summary(user_id, display_name, order_count, created_at, source_type) ",
+        "select",
+        "    tb1.user_id",
+        "    , coalesce(tb1.name, tb1.email) as display_name",
+        "    , count(tb2.order_id) as order_count",
+        "    , sysdatetime()",
+        "    , 'BATCH' ",
+        "from",
+        "    users as tb1 ",
+        "    left join orders as tb2",
+        "        on tb1.user_id = tb2.user_id",
+        "        and tb2.status = 'PAID' ",
+        "where",
+        "    tb1.status = 'ACTIVE' ",
+        "group by",
+        "    tb1.user_id",
+        "    , tb1.name",
+        "    , tb1.email ",
+        "having",
+        "    count(tb2.order_id) >= @min_order_count"
+      ],
+      "definitions": [
+        { "table_id": "user_summary", "table_name_ja": "ユーザー集計", "field_id": "user_id", "field_name_ja": "ユーザーID" },
+        { "table_id": "user_summary", "table_name_ja": "ユーザー集計", "field_id": "display_name", "field_name_ja": "表示名" },
+        { "table_id": "user_summary", "table_name_ja": "ユーザー集計", "field_id": "order_count", "field_name_ja": "注文件数" },
+        { "table_id": "user_summary", "table_name_ja": "ユーザー集計", "field_id": "created_at", "field_name_ja": "作成日時" },
+        { "table_id": "user_summary", "table_name_ja": "ユーザー集計", "field_id": "source_type", "field_name_ja": "作成元区分" },
+        { "table_id": "-", "table_name_ja": "ユーザー集計", "field_id": "user_id", "field_name_ja": "ユーザーID" },
+        { "table_id": "-", "table_name_ja": "ユーザー集計", "field_id": "display_name", "field_name_ja": "表示名" },
+        { "table_id": "-", "table_name_ja": "ユーザー集計", "field_id": "order_count", "field_name_ja": "注文件数" },
+        { "table_id": "-", "table_name_ja": "ユーザー集計", "field_id": "created_at", "field_name_ja": "作成日時" },
+        { "table_id": "-", "table_name_ja": "ユーザー集計", "field_id": "source_type", "field_name_ja": "作成元区分" },
+        { "table_id": "tb1", "table_name_ja": "ユーザー", "field_id": "user_id", "field_name_ja": "ユーザーID" },
+        { "table_id": "tb1", "table_name_ja": "ユーザー", "field_id": "name", "field_name_ja": "氏名" },
+        { "table_id": "tb1", "table_name_ja": "ユーザー", "field_id": "email", "field_name_ja": "メール" },
+        { "table_id": "tb1", "table_name_ja": "ユーザー", "field_id": "status", "field_name_ja": "状態" },
+        { "table_id": "tb2", "table_name_ja": "注文", "field_id": "order_id", "field_name_ja": "注文ID" },
+        { "table_id": "tb2", "table_name_ja": "注文", "field_id": "user_id", "field_name_ja": "注文ユーザーID" },
+        { "table_id": "tb2", "table_name_ja": "注文", "field_id": "status", "field_name_ja": "状態" }
+      ]
     }
   ]
 }
