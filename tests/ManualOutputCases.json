@@ -489,6 +489,31 @@
         { "table_id": "tb2", "table_name_ja": "注文", "field_id": "user_id", "field_name_ja": "注文ユーザーID" },
         { "table_id": "tb2", "table_name_ja": "注文", "field_id": "status", "field_name_ja": "状態" }
       ]
+    },
+    {
+      "id": "SEL-057",
+      "title": "WHEREの検索CASE",
+      "sql_lines": [
+        "select",
+        "    tb1.user_id",
+        "    , tb1.name",
+        "    , tb1.status ",
+        "from",
+        "    users as tb1 ",
+        "where",
+        "    case",
+        "        when tb1.status = 'ACTIVE' and tb1.deleted_at is null then 1",
+        "        when tb1.status = 'PENDING' and tb1.created_at >= dateadd(day, -7, @base_date) then 1",
+        "        else 0",
+        "    end = 1"
+      ],
+      "definitions": [
+        { "table_id": "tb1", "table_name_ja": "ユーザー", "field_id": "user_id", "field_name_ja": "ユーザーID" },
+        { "table_id": "tb1", "table_name_ja": "ユーザー", "field_id": "name", "field_name_ja": "氏名" },
+        { "table_id": "tb1", "table_name_ja": "ユーザー", "field_id": "status", "field_name_ja": "状態" },
+        { "table_id": "tb1", "table_name_ja": "ユーザー", "field_id": "deleted_at", "field_name_ja": "削除日時" },
+        { "table_id": "tb1", "table_name_ja": "ユーザー", "field_id": "created_at", "field_name_ja": "作成日時" }
+      ]
     }
   ]
 }
