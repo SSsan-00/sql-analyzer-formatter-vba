@@ -21,14 +21,14 @@ function Release-ComObject {
 
 Copy-Item -LiteralPath $workbookPath -Destination $tempWorkbookPath -Force
 
+if (-not [string]::IsNullOrWhiteSpace($ParserExePath)) {
+    $env:SQL_ANALYSIS_FORMATTER_PARSER_EXE = (Resolve-Path $ParserExePath)
+}
+
 $excel = New-Object -ComObject Excel.Application
 $excel.Visible = $false
 $excel.DisplayAlerts = $false
 $excel.AutomationSecurity = 1
-
-if (-not [string]::IsNullOrWhiteSpace($ParserExePath)) {
-    $env:SQL_ANALYSIS_FORMATTER_PARSER_EXE = (Resolve-Path $ParserExePath)
-}
 
 try {
     $workbook = $excel.Workbooks.Open($tempWorkbookPath)
@@ -43,7 +43,10 @@ try {
 
     $components.Import($mainModulePath) | Out-Null
     $components.Import($testModulePath) | Out-Null
-    $excel.Run("'$tempWorkbookPath'!RunAllSqlAnalysisFormatterTests", $false) | Out-Null
+    $testResult = [string]$excel.Run("'$tempWorkbookPath'!RunAllSqlAnalysisFormatterTestsForAutomation")
+    if ($testResult -ne 'OK') {
+        throw "VBA tests failed: $testResult"
+    }
 
     Write-Output 'VBA tests passed.'
 } finally {

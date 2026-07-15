@@ -7,6 +7,7 @@ Option Explicit
 Private Const COL_SQL As Long = 1
 Private Const COL_RESULT As Long = 2
 Private Const COL_REPLACEMENT As Long = 3
+Private Const OUTPUT_FILL_COLOR As Long = &HEFCEF2
 
 ' テスト一式をまとめて実行
 Public Sub RunAllSqlAnalysisFormatterTests(Optional ByVal showMessage As Boolean = True)
@@ -30,6 +31,18 @@ TestFail:
     End If
     Err.Raise Err.Number, Err.Source, Err.Description
 End Sub
+
+' 自動実行時の結果をダイアログなしで返す
+Public Function RunAllSqlAnalysisFormatterTestsForAutomation() As String
+    On Error GoTo TestFail
+
+    RunAllSqlAnalysisFormatterTests False
+    RunAllSqlAnalysisFormatterTestsForAutomation = "OK"
+    Exit Function
+
+TestFail:
+    RunAllSqlAnalysisFormatterTestsForAutomation = CStr(Err.Number) & ": " & Err.Description
+End Function
 
 '@TestMethod("SetupWorkbook")
 Public Sub SetupWorkbook_CreatesOutputSheet()
@@ -119,10 +132,20 @@ Public Sub AnalyzeQueries_WritesWithSubqueriesInsideOut()
     Set wsSql = ThisWorkbook.Worksheets(SqlSheetName())
     Set wsOutput = ThisWorkbook.Worksheets(OutputSheetName())
     AssertCellValue wsSql.Cells(2, COL_RESULT), ConvertFixtureSql(InputOutputNestedWithSql())
-    AssertCellValue wsOutput.Cells(1, 1), ExpectedOutputNestedInnerSubquerySql()
-    AssertCellValue wsOutput.Cells(2, 1), ExpectedOutputNestedOuterSubquerySql()
-    AssertCellValue wsOutput.Cells(3, 1), ExpectedOutputNestedWholeSql()
-    AssertCellValue wsOutput.Cells(4, 1), ""
+    If ExternalParserConfigured() Then
+        AssertCellValue wsOutput.Cells(1, 1), SubqueryTitle("SQ1")
+        AssertCellValue wsOutput.Cells(5, 1), ""
+        AssertCellValue wsOutput.Cells(6, 1), SubqueryTitle("high_value_orders")
+        AssertCellValue wsOutput.Cells(12, 1), ""
+        AssertCellValue wsOutput.Cells(13, 1), SelectOutputTitle()
+        AssertCellValue wsOutput.Cells(19, 1), ""
+        AssertFormattedOutputLayout wsOutput
+    Else
+        AssertCellValue wsOutput.Cells(1, 1), ExpectedOutputNestedInnerSubquerySql()
+        AssertCellValue wsOutput.Cells(2, 1), ExpectedOutputNestedOuterSubquerySql()
+        AssertCellValue wsOutput.Cells(3, 1), ExpectedOutputNestedWholeSql()
+        AssertCellValue wsOutput.Cells(4, 1), ""
+    End If
 End Sub
 
 '@TestMethod("AnalyzeQueries")
@@ -990,6 +1013,7 @@ Private Function TrimFixtureSql(ByVal sourceText As String) As String
     End If
 End Function
 
+' テストSQLの除去対象空白か判定
 Private Function IsFixtureWhitespace(ByVal value As String) As Boolean
     IsFixtureWhitespace = (value = " " Or value = vbTab Or value = vbCr Or value = vbLf)
 End Function
@@ -1075,6 +1099,7 @@ Private Function EscapeRegexFixture(ByVal value As String) As String
     EscapeRegexFixture = resultText
 End Function
 
+' 変換定義のテストデータを1行設定
 Private Sub PutDefinition(ByVal ws As Worksheet, ByVal rowNumber As Long, ByVal tableId As String, ByVal tableName As String, ByVal fieldId As String, ByVal fieldName As String)
     ws.Cells(rowNumber, 1).Value = tableId
     ws.Cells(rowNumber, 2).Value = tableName
@@ -1082,6 +1107,7 @@ Private Sub PutDefinition(ByVal ws As Worksheet, ByVal rowNumber As Long, ByVal 
     ws.Cells(rowNumber, 4).Value = fieldName
 End Sub
 
+' SQL解析行の変換結果と変換内容を検証
 Private Sub AssertAnalyzeRow(ByVal ws As Worksheet, ByVal rowNumber As Long, ByVal expectedSql As String, ByVal expectedReplacements As Variant)
     Dim index As Long
     Dim replacementCount As Long
@@ -1095,6 +1121,7 @@ Private Sub AssertAnalyzeRow(ByVal ws As Worksheet, ByVal rowNumber As Long, ByV
     AssertCellValue ws.Cells(rowNumber, COL_REPLACEMENT + replacementCount), ""
 End Sub
 
+' 指定シートが存在することを検証
 Private Sub AssertWorksheetExists(ByVal sheetName As String)
     Dim ws As Worksheet
 
@@ -1106,6 +1133,7 @@ Private Sub AssertWorksheetExists(ByVal sheetName As String)
     End If
 End Sub
 
+' アウトプットシートの目盛り線非表示を検証
 Private Sub AssertOutputSheetGridlinesHidden()
     Dim previousSheet As Object
     Dim wsOutput As Worksheet
@@ -1121,6 +1149,7 @@ Private Sub AssertOutputSheetGridlinesHidden()
     previousSheet.Activate
 End Sub
 
+' アウトプットシートのフォントを検証
 Private Sub AssertOutputSheetFont()
     Dim wsOutput As Worksheet
 
@@ -1130,6 +1159,30 @@ Private Sub AssertOutputSheetFont()
     AssertCellFont wsOutput.Cells(20, 5), OutputFontName(), 9
 End Sub
 
+' parser出力の共通書式を確認
+Private Sub AssertFormattedOutputLayout(ByVal wsOutput As Worksheet)
+    If CLng(wsOutput.Cells(3, 1).Interior.Color) <> OUTPUT_FILL_COLOR Then
+        Fail "Output label fill color is invalid."
+    End If
+    If wsOutput.Range("A2:CL2").Borders(xlEdgeBottom).LineStyle <> xlContinuous Then
+        Fail "Output reference border is missing."
+    End If
+    If CDbl(wsOutput.Rows(1).RowHeight) <> 13.5 Then
+        Fail "Output row height should be 13.5."
+    End If
+    If Abs(CDbl(wsOutput.Columns(1).ColumnWidth) - 1.14) > 0.02 Then
+        Fail "Output column width should be 1.14."
+    End If
+    AssertOutputSheetFont
+    AssertOutputSheetGridlinesHidden
+End Sub
+
+' 外部parserを使用するテスト実行か判定
+Private Function ExternalParserConfigured() As Boolean
+    ExternalParserConfigured = (Len(Environ$("SQL_ANALYSIS_FORMATTER_PARSER_EXE")) > 0)
+End Function
+
+' セルのフォント名とサイズを検証
 Private Sub AssertCellFont(ByVal cell As Range, ByVal expectedName As String, ByVal expectedSize As Double)
     If CStr(cell.Font.Name) <> expectedName Then
         Fail cell.Worksheet.Name & "!" & cell.Address(False, False) & _
@@ -1141,6 +1194,7 @@ Private Sub AssertCellFont(ByVal cell As Range, ByVal expectedName As String, By
     End If
 End Sub
 
+' セル値を検証
 Private Sub AssertCellValue(ByVal cell As Range, ByVal expected As String)
     Dim actual As String
 
@@ -1151,6 +1205,7 @@ Private Sub AssertCellValue(ByVal cell As Range, ByVal expected As String)
     End If
 End Sub
 
+' テスト失敗を例外として通知
 Private Sub Fail(ByVal message As String)
     Err.Raise vbObjectError + 513, "SqlAnalysisFormatterTests", message
 End Sub
@@ -1167,86 +1222,117 @@ Private Function W(ParamArray codes() As Variant) As String
     W = resultText
 End Function
 
+' 変換定義シート名を返す
 Private Function ReferenceSheetName() As String
     ReferenceSheetName = W(&H5909, &H63DB, &H5B9A, &H7FA9)
 End Function
 
+' SQL解析シート名を返す
 Private Function SqlSheetName() As String
     SqlSheetName = "SQL" & W(&H89E3, &H6790)
 End Function
 
+' アウトプットシート名を返す
 Private Function OutputSheetName() As String
     OutputSheetName = W(&H30A2, &H30A6, &H30C8, &H30D7, &H30C3, &H30C8)
 End Function
 
+' アウトプット用フォント名を返す
 Private Function OutputFontName() As String
     OutputFontName = W(&HFF2D, &HFF33, &H20, &H30B4, &H30B7, &H30C3, &H30AF)
 End Function
 
+' サブクエリ表のタイトルを返す
+Private Function SubqueryTitle(ByVal queryName As String) As String
+    SubqueryTitle = W(&H30B5, &H30D6, &H30AF, &H30A8, &H30EA) & "[" & queryName & "]"
+End Function
+
+' SELECT系表のタイトルを返す
+Private Function SelectOutputTitle() As String
+    SelectOutputTitle = W(&HFF1C) & "DB" & W(&H5165, &H51FA, &H529B, &H9805, &H76EE, &H5B9A, &H7FA9, &HFF1E)
+End Function
+
+' ユーザーテーブル和名を返す
 Private Function UserTableText() As String
     UserTableText = W(&H30E6, &H30FC, &H30B6, &H30FC)
 End Function
 
+' 注文テーブル和名を返す
 Private Function OrderTableText() As String
     OrderTableText = W(&H6CE8, &H6587)
 End Function
 
+' 注文明細テーブル和名を返す
 Private Function OrderItemTableText() As String
     OrderItemTableText = W(&H6CE8, &H6587, &H660E, &H7D30)
 End Function
 
+' 管理者テーブル和名を返す
 Private Function ManagerTableText() As String
     ManagerTableText = W(&H7BA1, &H7406, &H8005)
 End Function
 
+' ユーザーID和名を返す
 Private Function UserIdText() As String
     UserIdText = UserTableText() & "ID"
 End Function
 
+' 氏名和名を返す
 Private Function FullNameText() As String
     FullNameText = W(&H6C0F, &H540D)
 End Function
 
+' メール和名を返す
 Private Function MailText() As String
     MailText = W(&H30E1, &H30FC, &H30EB)
 End Function
 
+' 管理者ID和名を返す
 Private Function ManagerIdText() As String
     ManagerIdText = ManagerTableText() & "ID"
 End Function
 
+' 注文ID和名を返す
 Private Function OrderIdText() As String
     OrderIdText = OrderTableText() & "ID"
 End Function
 
+' 注文ユーザーID和名を返す
 Private Function OrderUserIdText() As String
     OrderUserIdText = OrderTableText() & UserTableText() & "ID"
 End Function
 
+' 金額和名を返す
 Private Function AmountText() As String
     AmountText = W(&H91D1, &H984D)
 End Function
 
+' 明細注文ID和名を返す
 Private Function DetailOrderIdText() As String
     DetailOrderIdText = W(&H660E, &H7D30, &H6CE8, &H6587) & "ID"
 End Function
 
+' 商品ID和名を返す
 Private Function ProductIdText() As String
     ProductIdText = W(&H5546, &H54C1) & "ID"
 End Function
 
+' 数量和名を返す
 Private Function QuantityText() As String
     QuantityText = W(&H6570, &H91CF)
 End Function
 
+' 状態和名を返す
 Private Function StatusText() As String
     StatusText = W(&H72B6, &H614B)
 End Function
 
+' 作成日時和名を返す
 Private Function CreatedAtText() As String
     CreatedAtText = W(&H4F5C, &H6210, &H65E5, &H6642)
 End Function
 
+' 更新日時和名を返す
 Private Function UpdatedAtText() As String
     UpdatedAtText = W(&H66F4, &H65B0, &H65E5, &H6642)
 End Function

@@ -13,6 +13,11 @@ Private Const COL_SQL As Long = 1
 Private Const COL_RESULT As Long = 2
 Private Const COL_REPLACEMENT As Long = 3
 
+Private Const OUTPUT_LAST_COLUMN As Long = 90
+Private Const OUTPUT_COLUMN_WIDTH As Double = 1.14
+Private Const OUTPUT_ROW_HEIGHT As Double = 13.5
+Private Const OUTPUT_FILL_COLOR As Long = &HEFCEF2
+
 ' ブックのシート名、見出し、操作ボタンを初期化
 Public Sub SetupWorkbook()
     Dim wsRef As Worksheet
@@ -38,10 +43,10 @@ Public Sub AnalyzeQueries(Optional ByVal showMessage As Boolean = True)
     Dim qualifiedKeys As Variant
     Dim standaloneKeys As Variant
     Dim lastRow As Long
-    Dim outputRow As Long
     Dim rowNumber As Long
     Dim sourceText As String
     Dim convertedText As String
+    Dim convertedQueryText As String
     Dim replacementValues As Object
 
     Set wsRef = GetReferenceSheet()
@@ -65,7 +70,6 @@ Public Sub AnalyzeQueries(Optional ByVal showMessage As Boolean = True)
     lastRow = LastUsedRowInColumn(wsSql, COL_SQL)
     ClearAnalyzeOutput wsSql, lastRow
     ClearOutputSheet wsOutput
-    outputRow = 1
 
     For rowNumber = 2 To lastRow
         sourceText = CStr(wsSql.Cells(rowNumber, COL_SQL).Value)
@@ -74,9 +78,18 @@ Public Sub AnalyzeQueries(Optional ByVal showMessage As Boolean = True)
             convertedText = ApplyMappings(sourceText, qualifiedMap, qualifiedKeys, standaloneMap, standaloneKeys, replacementValues)
             wsSql.Cells(rowNumber, COL_RESULT).Value = convertedText
             WriteReplacementValues wsSql, rowNumber, replacementValues
-            outputRow = WriteOutputQueryBlocks(wsOutput, outputRow, convertedText)
+            If Len(convertedQueryText) > 0 Then
+                convertedQueryText = convertedQueryText & vbCrLf
+            End If
+            convertedQueryText = convertedQueryText & convertedText
         End If
     Next rowNumber
+
+    If Len(convertedQueryText) > 0 Then
+        If Not TryWriteExternalOutputPlan(wsOutput, wsRef, convertedQueryText) Then
+            WriteOutputQueryBlocks wsOutput, 1, convertedQueryText
+        End If
+    End If
 
     wsSql.Columns(COL_RESULT).WrapText = False
     SetReplacementColumnsWrapText wsSql, False, LastUsedColumn(wsSql)
@@ -403,6 +416,7 @@ End Function
 ' アウトプットシートの表示と書式を適用
 Private Sub ApplyOutputSheetLayout(ByVal ws As Worksheet)
     ApplyOutputSheetFont ws
+    ApplyOutputSheetDimensions ws, LastUsedRow(ws)
     ApplyOutputSheetView ws
 End Sub
 
@@ -412,6 +426,16 @@ Private Sub ApplyOutputSheetFont(ByVal ws As Worksheet)
         .Name = OutputFontName()
         .Size = OutputFontSize()
     End With
+End Sub
+
+' アウトプットシートの列幅、行高、折り返しを設定
+Private Sub ApplyOutputSheetDimensions(ByVal ws As Worksheet, ByVal lastRow As Long)
+    Dim layoutLastRow As Long
+
+    layoutLastRow = MaxLong(lastRow, 1)
+    ws.Range(ws.Columns(1), ws.Columns(OUTPUT_LAST_COLUMN)).ColumnWidth = OUTPUT_COLUMN_WIDTH
+    ws.Range(ws.Rows(1), ws.Rows(layoutLastRow)).RowHeight = OUTPUT_ROW_HEIGHT
+    ws.Range(ws.Columns(1), ws.Columns(OUTPUT_LAST_COLUMN)).WrapText = False
 End Sub
 
 ' アウトプットシートの表示設定を適用
@@ -585,6 +609,278 @@ Private Sub WriteReplacementValues(ByVal wsSql As Worksheet, ByVal rowNumber As 
         wsSql.Cells(rowNumber, COL_REPLACEMENT + index).Value = CStr(keys(index))
     Next index
 End Sub
+
+' 外部parserの描画計画をアウトプットシートへ反映
+Private Function TryWriteExternalOutputPlan( _
+    ByVal wsOutput As Worksheet, _
+    ByVal wsRef As Worksheet, _
+    ByVal queryText As String) As Boolean
+
+    Dim parserPath As String
+    Dim inputPath As String
+    Dim mappingPath As String
+    Dim outputPath As String
+    Dim exitCode As Long
+    Dim outputText As String
+
+    On Error GoTo CleanUp
+
+    parserPath = ResolveParserExePath()
+    If Len(parserPath) = 0 Then Exit Function
+
+    inputPath = TemporaryFilePath("saf_sql_", ".sql")
+    mappingPath = TemporaryFilePath("saf_mapping_", ".txt")
+    outputPath = TemporaryFilePath("saf_plan_", ".txt")
+    WriteUtf8TextFile inputPath, queryText
+    WriteMappingDefinitionFile mappingPath, wsRef
+
+    exitCode = RunParserPlanProcess(parserPath, inputPath, mappingPath, outputPath)
+    If exitCode <> 0 Or Not FileExists(outputPath) Then GoTo CleanUp
+
+    outputText = ReadUnicodeTextFile(outputPath)
+    TryWriteExternalOutputPlan = ApplyOutputPlan(wsOutput, outputText)
+
+CleanUp:
+    DeleteFileIfExists inputPath
+    DeleteFileIfExists mappingPath
+    DeleteFileIfExists outputPath
+End Function
+
+' 変換定義シートをparser連携用の行形式で保存
+Private Sub WriteMappingDefinitionFile(ByVal filePath As String, ByVal wsRef As Worksheet)
+    Dim rowNumber As Long
+    Dim lastRow As Long
+    Dim mappingText As String
+
+    mappingText = "SAF_MAPPINGS" & vbTab & "1"
+    lastRow = LastUsedRow(wsRef)
+    For rowNumber = 2 To lastRow
+        mappingText = mappingText & vbCrLf & "M" & vbTab & _
+            EscapeProtocolField(CStr(wsRef.Cells(rowNumber, COL_TABLE_ID).Value)) & vbTab & _
+            EscapeProtocolField(CStr(wsRef.Cells(rowNumber, COL_TABLE_NAME).Value)) & vbTab & _
+            EscapeProtocolField(CStr(wsRef.Cells(rowNumber, COL_FIELD_ID).Value)) & vbTab & _
+            EscapeProtocolField(CStr(wsRef.Cells(rowNumber, COL_FIELD_NAME).Value))
+    Next rowNumber
+
+    WriteUtf8TextFile filePath, mappingText
+End Sub
+
+' parserを描画計画形式で同期実行
+Private Function RunParserPlanProcess( _
+    ByVal parserPath As String, _
+    ByVal inputPath As String, _
+    ByVal mappingPath As String, _
+    ByVal outputPath As String) As Long
+
+    Dim shell As Object
+    Dim commandText As String
+
+    commandText = QuoteCommandArgument(parserPath) & _
+        " --input " & QuoteCommandArgument(inputPath) & _
+        " --mappings " & QuoteCommandArgument(mappingPath) & _
+        " --output " & QuoteCommandArgument(outputPath) & _
+        " --format vba-plan"
+
+    Set shell = CreateObject("WScript.Shell")
+    RunParserPlanProcess = CLng(shell.Run(commandText, 0, True))
+End Function
+
+' parserの描画計画を検証してセルと書式へ反映
+Private Function ApplyOutputPlan(ByVal ws As Worksheet, ByVal planText As String) As Boolean
+    Dim lines As Variant
+    Dim fields As Variant
+    Dim lineText As String
+    Dim normalizedText As String
+    Dim lineIndex As Long
+    Dim rowCount As Long
+    Dim rowNumber As Long
+    Dim columnNumber As Long
+    Dim startRow As Long
+    Dim endRow As Long
+
+    On Error GoTo InvalidPlan
+
+    normalizedText = Replace(planText, vbCrLf, vbLf)
+    normalizedText = Replace(normalizedText, vbCr, vbLf)
+    lines = Split(normalizedText, vbLf)
+    fields = Split(CStr(lines(0)), vbTab)
+    If UBound(fields) <> 3 Then Exit Function
+    If CStr(fields(0)) <> "SAF_OUTPUT_PLAN" Or CStr(fields(1)) <> "1" Then Exit Function
+    If Not IsNumeric(fields(2)) Then Exit Function
+    rowCount = CLng(fields(2))
+    If rowCount < 0 Then Exit Function
+
+    ApplyOutputSheetDimensions ws, rowCount
+    For lineIndex = 1 To UBound(lines)
+        lineText = CStr(lines(lineIndex))
+        If Len(lineText) > 0 Then
+            fields = Split(lineText, vbTab)
+            If UBound(fields) <> 3 Then GoTo InvalidPlan
+
+            Select Case CStr(fields(0))
+                Case "C"
+                    If Not IsNumeric(fields(1)) Or Not IsNumeric(fields(2)) Then GoTo InvalidPlan
+                    rowNumber = CLng(fields(1))
+                    columnNumber = CLng(fields(2))
+                    If rowNumber < 1 Or columnNumber < 1 Or columnNumber > OUTPUT_LAST_COLUMN Then GoTo InvalidPlan
+                    ws.Cells(rowNumber, columnNumber).Value = UnescapeProtocolField(CStr(fields(3)))
+                Case "S"
+                    If Not IsNumeric(fields(2)) Or Not IsNumeric(fields(3)) Then GoTo InvalidPlan
+                    startRow = CLng(fields(2))
+                    endRow = CLng(fields(3))
+                    If startRow < 1 Or endRow < startRow Then GoTo InvalidPlan
+                    ApplyOutputSectionStyle ws, CStr(fields(1)), startRow, endRow
+                Case Else
+                    GoTo InvalidPlan
+            End Select
+        End If
+    Next lineIndex
+
+    ApplyOutputSheetFont ws
+    ApplyOutputSheetView ws
+    ApplyOutputPlan = True
+    Exit Function
+
+InvalidPlan:
+    ApplyOutputPlan = False
+End Function
+
+' セクション種別に応じて塗りと外枠を設定
+Private Sub ApplyOutputSectionStyle( _
+    ByVal ws As Worksheet, _
+    ByVal sectionKind As String, _
+    ByVal startRow As Long, _
+    ByVal endRow As Long)
+
+    Select Case UCase$(sectionKind)
+        Case "REFERENCE"
+            ApplyBottomBorder ws.Range(ws.Cells(startRow, 1), ws.Cells(endRow, OUTPUT_LAST_COLUMN))
+        Case "STANDARD"
+            ApplyFilledFrame ws.Range(ws.Cells(startRow, 1), ws.Cells(endRow, 6)), OUTPUT_FILL_COLOR
+            ApplyFilledFrame ws.Range(ws.Cells(startRow, 7), ws.Cells(endRow, OUTPUT_LAST_COLUMN)), vbWhite
+        Case "TRANSFER"
+            ApplyTransferSectionStyle ws, startRow, endRow
+        Case "SEPARATOR"
+            ApplySeparatorBorder ws.Range(ws.Cells(startRow, 1), ws.Cells(endRow, OUTPUT_LAST_COLUMN))
+        Case Else
+            Err.Raise vbObjectError + 520, "ApplyOutputSectionStyle", "Unknown section kind: " & sectionKind
+    End Select
+End Sub
+
+' データ移送表の3列フレームと見出し色を設定
+Private Sub ApplyTransferSectionStyle(ByVal ws As Worksheet, ByVal startRow As Long, ByVal endRow As Long)
+    Dim leftRange As Range
+    Dim middleRange As Range
+    Dim rightRange As Range
+
+    Set leftRange = ws.Range(ws.Cells(startRow, 1), ws.Cells(endRow, 18))
+    Set middleRange = ws.Range(ws.Cells(startRow, 19), ws.Cells(endRow, 36))
+    Set rightRange = ws.Range(ws.Cells(startRow, 37), ws.Cells(endRow, OUTPUT_LAST_COLUMN))
+
+    ApplyFilledFrame leftRange, vbWhite
+    ApplyFilledFrame middleRange, vbWhite
+    ApplyFilledFrame rightRange, vbWhite
+    ApplyInsideHorizontalBorder leftRange
+    ApplyInsideHorizontalBorder middleRange
+    ApplyInsideHorizontalBorder rightRange
+    ws.Range(ws.Cells(startRow, 1), ws.Cells(startRow, 18)).Interior.Color = OUTPUT_FILL_COLOR
+    ws.Range(ws.Cells(startRow, 19), ws.Cells(startRow, 36)).Interior.Color = OUTPUT_FILL_COLOR
+    ws.Range(ws.Cells(startRow, 37), ws.Cells(startRow, OUTPUT_LAST_COLUMN)).Interior.Color = OUTPUT_FILL_COLOR
+    ApplyBottomBorder ws.Range(ws.Cells(startRow, 1), ws.Cells(startRow, 18))
+    ApplyBottomBorder ws.Range(ws.Cells(startRow, 19), ws.Cells(startRow, 36))
+    ApplyBottomBorder ws.Range(ws.Cells(startRow, 37), ws.Cells(startRow, OUTPUT_LAST_COLUMN))
+End Sub
+
+' 指定範囲の行間へ最細の黒い罫線を設定
+Private Sub ApplyInsideHorizontalBorder(ByVal targetRange As Range)
+    If targetRange.Rows.Count <= 1 Then Exit Sub
+
+    With targetRange.Borders(xlInsideHorizontal)
+        .LineStyle = xlContinuous
+        .Weight = xlThin
+        .Color = vbBlack
+    End With
+End Sub
+
+' 指定範囲を塗り、最細の黒い外枠を設定
+Private Sub ApplyFilledFrame(ByVal targetRange As Range, ByVal fillColor As Long)
+    targetRange.Interior.Color = fillColor
+    ApplyOuterBorder targetRange
+End Sub
+
+' 指定範囲へ最細の黒い外枠を設定
+Private Sub ApplyOuterBorder(ByVal targetRange As Range)
+    Dim borderIndex As Variant
+
+    For Each borderIndex In Array(xlEdgeLeft, xlEdgeTop, xlEdgeBottom, xlEdgeRight)
+        With targetRange.Borders(CLng(borderIndex))
+            .LineStyle = xlContinuous
+            .Weight = xlThin
+            .Color = vbBlack
+        End With
+    Next borderIndex
+End Sub
+
+' 参照テーブル行へ下罫線を設定
+Private Sub ApplyBottomBorder(ByVal targetRange As Range)
+    With targetRange.Borders(xlEdgeBottom)
+        .LineStyle = xlContinuous
+        .Weight = xlThin
+        .Color = vbBlack
+    End With
+End Sub
+
+' UNIONなどの境界行へ上下罫線を設定
+Private Sub ApplySeparatorBorder(ByVal targetRange As Range)
+    Dim borderIndex As Variant
+
+    targetRange.Interior.Color = vbWhite
+    For Each borderIndex In Array(xlEdgeTop, xlEdgeBottom)
+        With targetRange.Borders(CLng(borderIndex))
+            .LineStyle = xlContinuous
+            .Weight = xlThin
+            .Color = vbBlack
+        End With
+    Next borderIndex
+End Sub
+
+' parser行形式で使用する制御文字をエスケープ
+Private Function EscapeProtocolField(ByVal value As String) As String
+    value = Replace(value, "\", "\\")
+    value = Replace(value, vbCr, "\r")
+    value = Replace(value, vbLf, "\n")
+    value = Replace(value, vbTab, "\t")
+    EscapeProtocolField = value
+End Function
+
+' parser行形式のエスケープを元へ戻す
+Private Function UnescapeProtocolField(ByVal value As String) As String
+    Dim resultText As String
+    Dim currentChar As String
+    Dim escapedChar As String
+    Dim index As Long
+
+    index = 1
+    Do While index <= Len(value)
+        currentChar = Mid$(value, index, 1)
+        If currentChar = "\" And index < Len(value) Then
+            escapedChar = Mid$(value, index + 1, 1)
+            Select Case escapedChar
+                Case "r": resultText = resultText & vbCr
+                Case "n": resultText = resultText & vbLf
+                Case "t": resultText = resultText & vbTab
+                Case "\": resultText = resultText & "\"
+                Case Else: resultText = resultText & "\" & escapedChar
+            End Select
+            index = index + 2
+        Else
+            resultText = resultText & currentChar
+            index = index + 1
+        End If
+    Loop
+
+    UnescapeProtocolField = resultText
+End Function
 
 ' アウトプットシートへクエリブロックを順に出力
 Private Function WriteOutputQueryBlocks(ByVal wsOutput As Worksheet, ByVal startRow As Long, ByVal queryText As String) As Long
@@ -943,9 +1239,14 @@ Private Sub RestoreFindSearchOrderByRows(ByVal ws As Worksheet)
         SearchFormat:=False)
 End Sub
 
-' アウトプットシートの内容だけをクリア
+' アウトプットシートの内容と前回の表書式をクリア
 Private Sub ClearOutputSheet(ByVal ws As Worksheet)
+    Dim clearLastRow As Long
+
+    clearLastRow = MaxLong(LastUsedRow(ws), ws.UsedRange.Row + ws.UsedRange.Rows.Count - 1)
     ws.Cells.ClearContents
+    ws.Range(ws.Cells(1, 1), ws.Cells(MaxLong(clearLastRow, 1), OUTPUT_LAST_COLUMN)).ClearFormats
+    ApplyOutputSheetLayout ws
 End Sub
 
 ' 指定シートの2行目以降を使用範囲に合わせてクリア
