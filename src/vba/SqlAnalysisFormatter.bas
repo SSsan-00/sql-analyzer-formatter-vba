@@ -93,8 +93,8 @@ Public Sub AnalyzeQueries(Optional ByVal showMessage As Boolean = True)
         End If
     End If
 
-    wsSql.Columns(COL_RESULT).WrapText = False
-    SetReplacementColumnsWrapText wsSql, False, LastUsedColumn(wsSql)
+    wsSql.Range(wsSql.Cells(1, COL_RESULT), wsSql.Cells(MaxLong(lastRow, 1), COL_RESULT)).WrapText = False
+    SetReplacementColumnsWrapText wsSql, False, LastUsedColumn(wsSql), MaxLong(lastRow, 1)
     If showMessage Then
         MsgBox AnalyzeDoneMessage(), vbInformation
     End If
@@ -417,15 +417,17 @@ End Function
 
 ' アウトプットシートの表示と書式を適用
 Private Sub ApplyOutputSheetLayout(ByVal ws As Worksheet)
-    ApplyOutputSheetFont ws
-    ApplyOutputSheetDimensions ws, LastUsedRow(ws)
+    Dim lastRow As Long
+
+    lastRow = LastOutputRow(ws)
+    ApplyOutputSheetFont ws, lastRow
+    ApplyOutputSheetDimensions ws, lastRow
     ApplyOutputSheetView ws
 End Sub
 
 ' アウトプットシートの成果物をA列からCL列までコピー
 Public Sub CopyOutput(Optional ByVal showMessage As Boolean = True)
     Dim wsOutput As Worksheet
-    Dim outputCells As Range
     Dim lastRow As Long
     Dim errorNumber As Long
     Dim errorDescription As String
@@ -433,15 +435,14 @@ Public Sub CopyOutput(Optional ByVal showMessage As Boolean = True)
     On Error GoTo CopyFail
 
     Set wsOutput = GetOutputSheet()
-    Set outputCells = UsedValueCells(wsOutput)
-    If outputCells Is Nothing Then
+    lastRow = LastOutputRow(wsOutput)
+    If Application.CountA(wsOutput.Range(wsOutput.Cells(1, 1), wsOutput.Cells(lastRow, OUTPUT_LAST_COLUMN))) = 0 Then
         If showMessage Then
             MsgBox NoOutputToCopyMessage(), vbInformation
         End If
         Exit Sub
     End If
 
-    lastRow = LastUsedRow(wsOutput)
     wsOutput.Range(wsOutput.Cells(1, 1), wsOutput.Cells(lastRow, OUTPUT_LAST_COLUMN)).Copy
     If showMessage Then
         MsgBox CopyDoneMessage(), vbInformation
@@ -458,9 +459,10 @@ CopyFail:
     End If
 End Sub
 
-' アウトプットシートの既定フォントを設定
-Private Sub ApplyOutputSheetFont(ByVal ws As Worksheet)
-    With ws.Cells.Font
+' アウトプット範囲へ既定フォントを設定
+Private Sub ApplyOutputSheetFont(ByVal ws As Worksheet, Optional ByVal lastRow As Long = 0)
+    lastRow = MaxLong(lastRow, 1)
+    With ws.Range(ws.Cells(1, 1), ws.Cells(lastRow, OUTPUT_LAST_COLUMN)).Font
         .Name = OutputFontName()
         .Size = OutputFontSize()
     End With
@@ -473,7 +475,7 @@ Private Sub ApplyOutputSheetDimensions(ByVal ws As Worksheet, ByVal lastRow As L
     layoutLastRow = MaxLong(lastRow, 1)
     ws.Range(ws.Columns(1), ws.Columns(OUTPUT_LAST_COLUMN)).ColumnWidth = OUTPUT_COLUMN_WIDTH
     ws.Range(ws.Rows(1), ws.Rows(layoutLastRow)).RowHeight = OUTPUT_ROW_HEIGHT
-    ws.Range(ws.Columns(1), ws.Columns(OUTPUT_LAST_COLUMN)).WrapText = False
+    ws.Range(ws.Cells(1, 1), ws.Cells(layoutLastRow, OUTPUT_LAST_COLUMN)).WrapText = False
 End Sub
 
 ' アウトプットシートの表示設定を適用
@@ -564,7 +566,7 @@ Private Sub ApplySqlHeader(ByVal ws As Worksheet)
     ws.Rows(1).RowHeight = 30
     ws.Columns("A:B").ColumnWidth = 42
     ws.Columns("C:Z").ColumnWidth = 24
-    SetReplacementColumnsWrapText ws, False, 26
+    SetReplacementColumnsWrapText ws, False, 26, MaxLong(LastUsedRowInColumn(ws, COL_SQL), 1)
 End Sub
 
 ' ヘッダー範囲の結合と内容を初期化
@@ -574,9 +576,15 @@ Private Sub ResetHeaderRange(ByVal headerRange As Range)
 End Sub
 
 ' 変換内容列以降の折り返し設定を変更
-Private Sub SetReplacementColumnsWrapText(ByVal ws As Worksheet, ByVal wrapEnabled As Boolean, ByVal lastColumn As Long)
+Private Sub SetReplacementColumnsWrapText( _
+    ByVal ws As Worksheet, _
+    ByVal wrapEnabled As Boolean, _
+    ByVal lastColumn As Long, _
+    ByVal lastRow As Long)
+
     lastColumn = MaxLong(lastColumn, COL_REPLACEMENT)
-    ws.Range(ws.Columns(COL_REPLACEMENT), ws.Columns(lastColumn)).WrapText = wrapEnabled
+    lastRow = MaxLong(lastRow, 1)
+    ws.Range(ws.Cells(1, COL_REPLACEMENT), ws.Cells(lastRow, lastColumn)).WrapText = wrapEnabled
 End Sub
 
 ' 変換定義シートとSQL解析シートのヘッダーを既定値に復元
@@ -817,7 +825,7 @@ Private Function ApplyOutputPlan(ByVal ws As Worksheet, ByVal planText As String
         End If
     Next lineIndex
 
-    ApplyOutputSheetFont ws
+    ApplyOutputSheetFont ws, rowCount
     ApplyOutputSheetView ws
     ApplyOutputPlan = True
     Exit Function
@@ -984,7 +992,7 @@ Private Sub WriteFallbackOutput(ByVal wsOutput As Worksheet, ByVal queryText As 
     reasonRow = UBound(lines) - LBound(lines) + 3
     wsOutput.Cells(reasonRow, 1).Value = FallbackReasonPrefix() & reason
     ApplyOutputSheetDimensions wsOutput, reasonRow
-    ApplyOutputSheetFont wsOutput
+    ApplyOutputSheetFont wsOutput, reasonRow
     ApplyOutputSheetView wsOutput
 End Sub
 
@@ -1361,11 +1369,35 @@ End Sub
 Private Sub ClearOutputSheet(ByVal ws As Worksheet)
     Dim clearLastRow As Long
 
-    clearLastRow = MaxLong(LastUsedRow(ws), ws.UsedRange.Row + ws.UsedRange.Rows.Count - 1)
-    ws.Cells.ClearContents
-    ws.Range(ws.Cells(1, 1), ws.Cells(MaxLong(clearLastRow, 1), OUTPUT_LAST_COLUMN)).ClearFormats
+    clearLastRow = LastOutputRow(ws)
+    With ws.Range(ws.Cells(1, 1), ws.Cells(MaxLong(clearLastRow, 1), OUTPUT_LAST_COLUMN))
+        .ClearContents
+        .ClearFormats
+    End With
     ApplyOutputSheetLayout ws
 End Sub
+
+' アウトプット範囲の最終使用行を取得
+Private Function LastOutputRow(ByVal ws As Worksheet) As Long
+    Dim outputRange As Range
+    Dim foundCell As Range
+
+    LastOutputRow = 1
+    Set outputRange = ws.Range(ws.Cells(1, 1), ws.Cells(ws.Rows.Count, OUTPUT_LAST_COLUMN))
+    Set foundCell = outputRange.Find( _
+        What:="*", _
+        After:=outputRange.Cells(1, 1), _
+        LookIn:=xlFormulas, _
+        LookAt:=xlPart, _
+        SearchOrder:=xlByRows, _
+        SearchDirection:=xlPrevious, _
+        MatchCase:=False, _
+        MatchByte:=False, _
+        SearchFormat:=False)
+    If Not foundCell Is Nothing Then
+        LastOutputRow = foundCell.Row
+    End If
+End Function
 
 ' 指定シートの2行目以降を使用範囲に合わせてクリア
 Private Sub ClearRowsBelowHeader(ByVal ws As Worksheet, ByVal minimumLastColumn As Long)

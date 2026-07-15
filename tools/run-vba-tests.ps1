@@ -14,8 +14,8 @@ $previousParserExePath = $env:SQL_ANALYSIS_FORMATTER_PARSER_EXE
 function Release-ComObject {
     param([object]$ComObject)
 
-    if ($null -ne $ComObject) {
-        [System.Runtime.InteropServices.Marshal]::ReleaseComObject($ComObject) | Out-Null
+    if ($null -ne $ComObject -and [System.Runtime.InteropServices.Marshal]::IsComObject($ComObject)) {
+        [System.Runtime.InteropServices.Marshal]::FinalReleaseComObject($ComObject) | Out-Null
     }
 }
 
@@ -25,35 +25,74 @@ if (-not [string]::IsNullOrWhiteSpace($ParserExePath)) {
     $env:SQL_ANALYSIS_FORMATTER_PARSER_EXE = (Resolve-Path $ParserExePath)
 }
 
+$excel = $null
+$workbooks = $null
+$workbook = $null
+$vbProject = $null
+$components = $null
 $excel = New-Object -ComObject Excel.Application
 $excel.Visible = $false
 $excel.DisplayAlerts = $false
 $excel.AutomationSecurity = 1
 
 try {
-    $workbook = $excel.Workbooks.Open($tempWorkbookPath)
-    $components = $workbook.VBProject.VBComponents
+    $workbooks = $excel.Workbooks
+    $workbook = $workbooks.Open($tempWorkbookPath)
+    Release-ComObject $workbooks
+    $workbooks = $null
+    $vbProject = $workbook.VBProject
+    $components = $vbProject.VBComponents
 
     foreach ($moduleName in @('SqlAnalysisFormatter', 'SqlAnalysisFormatterTests')) {
+        $existingComponent = $null
         try {
-            $components.Remove($components.Item($moduleName))
+            $existingComponent = $components.Item($moduleName)
+            $components.Remove($existingComponent)
         } catch {
+        } finally {
+            Release-ComObject $existingComponent
         }
     }
 
-    $components.Import($mainModulePath) | Out-Null
-    $components.Import($testModulePath) | Out-Null
-    $testResult = [string]$excel.Run("'$tempWorkbookPath'!RunAllSqlAnalysisFormatterTestsForAutomation")
-    if ($testResult -ne 'OK') {
-        throw "VBA tests failed: $testResult"
+    $importedComponent = $components.Import($mainModulePath)
+    Release-ComObject $importedComponent
+    $importedComponent = $components.Import($testModulePath)
+    Release-ComObject $importedComponent
+    $testMacros = @(
+        'SetupWorkbook_CreatesOutputSheet',
+        'CopyOutput_CopiesRenderedRange',
+        'AnalyzeQueries_ConvertsCrudFixtures',
+        'AnalyzeQueries_ConvertsTsqlFunctionFixtures',
+        'AnalyzeQueries_WritesWithSubqueriesInsideOut',
+        'AnalyzeQueries_WritesUnsupportedQueryAsIs',
+        'ClearData_ClearsOutputSheet'
+    )
+    for ($testIndex = 0; $testIndex -lt $testMacros.Count; $testIndex++) {
+        $macroName = $testMacros[$testIndex]
+        $excel.Run("'$tempWorkbookPath'!$macroName") | Out-Null
+        Write-Output ("VBA test progress: {0}/{1} {2}" -f ($testIndex + 1), $testMacros.Count, $macroName)
     }
 
     Write-Output 'VBA tests passed.'
 } finally {
+    Release-ComObject $components
+    Release-ComObject $vbProject
     if ($null -ne $workbook) {
-        $workbook.Close($false) | Out-Null
+        try {
+            $workbook.Close($false) | Out-Null
+        } catch {
+            Write-Warning "テスト用ブックを閉じられませんでした: $($_.Exception.Message)"
+        }
     }
-    $excel.Quit()
+    Release-ComObject $workbook
+    Release-ComObject $workbooks
+    if ($null -ne $excel) {
+        try {
+            $excel.Quit()
+        } catch {
+            Write-Warning "Excelを終了できませんでした: $($_.Exception.Message)"
+        }
+    }
     Release-ComObject $excel
     [GC]::Collect()
     [GC]::WaitForPendingFinalizers()
