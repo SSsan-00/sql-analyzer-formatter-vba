@@ -51,6 +51,36 @@ public sealed class OutputSheetPlanBuilderTests
     }
 
     /// <summary>
+    /// COALESCEの関数名だけを大文字へ統一することを確認
+    /// </summary>
+    [TestMethod]
+    public void Build_NormalizesCoalesceKeywordToUppercase()
+    {
+        const string sql = """
+            SELECT
+                coalesce(tb1.メール, coalesce(tb1.氏名, 'coalesce(')) AS contact_text
+            FROM
+                users AS tb1
+            ORDER BY
+                coalesce(tb1.メール, tb1.氏名)
+            """;
+        MappingDefinition[] mappings =
+        [
+            new("tb1", "ユーザー", "email", "メール")
+        ];
+
+        var plan = OutputSheetPlanBuilder.Build(sql, mappings);
+
+        Assert.IsFalse(plan.IsFallback);
+        Assert.AreEqual(
+            "COALESCE(tb1.メール, COALESCE(tb1.氏名, 'coalesce('))",
+            CellValue(plan, 3, 32));
+        Assert.AreEqual(
+            "COALESCE(tb1.メール, tb1.氏名)",
+            CellValue(plan, 4, 17));
+    }
+
+    /// <summary>
     /// SELECT各句を期待する行順で出力することを確認
     /// </summary>
     [TestMethod]

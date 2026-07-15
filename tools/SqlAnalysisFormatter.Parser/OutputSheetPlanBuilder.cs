@@ -271,7 +271,7 @@ public static class OutputSheetPlanBuilder
             QuerySpecification query => BuildSelect(sql, query, mappings, title, additionalTables),
             BinaryQueryExpression binary => BuildBinaryQuery(sql, binary, mappings, title, additionalTables),
             _ => CreateFallback(
-                FragmentText(sql, expression),
+                RawFragmentText(sql, expression),
                 "未対応のクエリ式: " + expression.GetType().Name)
         };
     }
@@ -291,7 +291,7 @@ public static class OutputSheetPlanBuilder
         AddBinaryBranches(binary, branches, separators);
         if (branches.Count == 0)
         {
-            return CreateFallback(FragmentText(sql, binary), "複合クエリの分岐を取得できませんでした");
+            return CreateFallback(RawFragmentText(sql, binary), "複合クエリの分岐を取得できませんでした");
         }
 
         var tableDisplays = branches
@@ -1057,13 +1057,81 @@ public static class OutputSheetPlanBuilder
     /// </summary>
     private static string FragmentText(string sql, TSqlFragment fragment)
     {
+        return ExtractFragmentText(sql, fragment, normalizeCoalesce: true);
+    }
+
+    /// <summary>
+    /// AST位置から表記を変更せず元SQLを取得
+    /// </summary>
+    private static string RawFragmentText(string sql, TSqlFragment fragment)
+    {
+        return ExtractFragmentText(sql, fragment, normalizeCoalesce: false);
+    }
+
+    /// <summary>
+    /// AST位置からSQL断片を取得し描画用キーワードを正規化
+    /// </summary>
+    private static string ExtractFragmentText(
+        string sql,
+        TSqlFragment fragment,
+        bool normalizeCoalesce)
+    {
         if (fragment.StartOffset < 0 || fragment.FragmentLength <= 0 ||
             fragment.StartOffset + fragment.FragmentLength > sql.Length)
         {
             return string.Empty;
         }
 
-        return sql.Substring(fragment.StartOffset, fragment.FragmentLength).Trim();
+        var text = sql.Substring(fragment.StartOffset, fragment.FragmentLength);
+        if (normalizeCoalesce)
+        {
+            text = NormalizeCoalesceKeywords(text, fragment.StartOffset, fragment);
+        }
+
+        return text.Trim();
+    }
+
+    /// <summary>
+    /// ASTで識別したCOALESCEだけを大文字へ統一
+    /// </summary>
+    private static string NormalizeCoalesceKeywords(
+        string text,
+        int fragmentStartOffset,
+        TSqlFragment fragment)
+    {
+        const string keyword = "COALESCE";
+        if (!text.Contains(keyword, StringComparison.OrdinalIgnoreCase))
+        {
+            return text;
+        }
+
+        var collector = new CoalesceExpressionCollector();
+        fragment.Accept(collector);
+        if (collector.StartOffsets.Count == 0)
+        {
+            return text;
+        }
+
+        var characters = text.ToCharArray();
+        foreach (var startOffset in collector.StartOffsets)
+        {
+            var relativeOffset = startOffset - fragmentStartOffset;
+            if (relativeOffset < 0 || relativeOffset + keyword.Length > text.Length ||
+                string.Compare(
+                    text,
+                    relativeOffset,
+                    keyword,
+                    0,
+                    keyword.Length,
+                    StringComparison.OrdinalIgnoreCase) != 0)
+            {
+                continue;
+            }
+
+            keyword.CopyTo(0, characters, relativeOffset, keyword.Length);
+        }
+
+        return new string(characters);
     }
 
     /// <summary>
@@ -1244,6 +1312,23 @@ public static class OutputSheetPlanBuilder
         public override void ExplicitVisit(ColumnReferenceExpression node)
         {
             Found = true;
+        }
+    }
+
+    /// <summary>
+    /// SQL断片内のCOALESCE開始位置を収集
+    /// </summary>
+    private sealed class CoalesceExpressionCollector : TSqlFragmentVisitor
+    {
+        public List<int> StartOffsets { get; } = [];
+
+        /// <summary>
+        /// COALESCEの開始位置を追加
+        /// </summary>
+        public override void ExplicitVisit(CoalesceExpression node)
+        {
+            StartOffsets.Add(node.StartOffset);
+            base.ExplicitVisit(node);
         }
     }
 
