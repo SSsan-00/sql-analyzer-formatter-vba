@@ -27,6 +27,8 @@ public sealed class OutputGoldenRegressionTests
         {
             var mappings = testCase.Tables
                 .Select(table => new MappingDefinition(table.Key, table.Value, string.Empty, string.Empty))
+                .Concat((testCase.OutputFields ?? new Dictionary<string, string>())
+                    .Select(field => new MappingDefinition("-", string.Empty, field.Key, field.Value)))
                 .ToArray();
             var plan = OutputSheetPlanBuilder.Build(string.Join('\n', testCase.SqlLines), mappings);
             var expected = workbook.ReadCells(testCase.Id);
@@ -97,7 +99,9 @@ public sealed class OutputGoldenRegressionTests
         string Id,
         [property: JsonPropertyName("sql_lines")]
         IReadOnlyList<string> SqlLines,
-        IReadOnlyDictionary<string, string> Tables);
+        IReadOnlyDictionary<string, string> Tables,
+        [property: JsonPropertyName("output_fields")]
+        IReadOnlyDictionary<string, string>? OutputFields);
 
     /// <summary>
     /// Open XMLパッケージから期待値セルだけを読み取る
