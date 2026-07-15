@@ -1698,6 +1698,8 @@ SELECT INTOは複雑度にかかわらず、サブクエリ表、`＜DB入出力
 | SEL-056 | 定数・関数・JOIN・集計を含む拡張INSERT SELECT |
 | SEL-057 | WHERE句の検索CASE |
 | SEL-058 | SELECT DISTINCT |
+| SEL-059 | SELECT INTOのハイブリッド出力 |
+| SEL-061 | CASEを含む複雑なSELECT INTOのハイブリッド出力 |
 
 各SQLはScriptDomで構文エラーがないことと、A5M2 `Ctrl+Q`の実整形結果を確認済みです。
 
@@ -1705,7 +1707,5 @@ SELECT INTOは複雑度にかかわらず、サブクエリ表、`＜DB入出力
 
 | ケース | 内容 | 状態 |
 | --- | --- | --- |
-| SEL-059 | SELECT INTO | ハイブリッド構成で再レビュー待ち |
 | SEL-060 | INSERT VALUES | 未着手 |
-| SEL-061 | CASEを含む複雑なSELECT INTO | レビュー待ち |
 | SEL-062 | UPDATE SET内のサブクエリ | 未着手 |
