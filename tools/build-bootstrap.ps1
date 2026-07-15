@@ -119,8 +119,13 @@ function Get-DeveloperArtifacts {
     $artifacts.Add((New-Artifact (Join-Path $repoRoot 'docs\DEVELOPER_GUIDE.md') 'docs\DEVELOPER_GUIDE.md'))
     $artifacts.Add((New-Artifact (Join-Path $repoRoot 'SqlAnalysisFormatter.sln') 'SqlAnalysisFormatter.sln'))
     $artifacts.Add((New-Artifact (Join-Path $repoRoot 'tests\CRUD_TEST_CASES.md') 'tests\CRUD_TEST_CASES.md'))
+    $artifacts.Add((New-Artifact (Join-Path $repoRoot 'tests\ManualOutputCases.json') 'tests\ManualOutputCases.json'))
+    $artifacts.Add((New-Artifact (Join-Path $repoRoot 'tests\OutputReportCases.json') 'tests\OutputReportCases.json'))
+    $artifacts.Add((New-Artifact (Join-Path $repoRoot 'tests\SqlAnalysisFormatter.OutputExpectations.xlsx') 'tests\SqlAnalysisFormatter.OutputExpectations.xlsx'))
     $artifacts.Add((New-Artifact (Join-Path $repoRoot 'tools\publish-parser.ps1') 'tools\publish-parser.ps1'))
     $artifacts.Add((New-Artifact (Join-Path $repoRoot 'tools\run-vba-tests.ps1') 'tools\run-vba-tests.ps1'))
+    $artifacts.Add((New-Artifact (Join-Path $repoRoot 'tools\run-output-golden-tests.ps1') 'tools\run-output-golden-tests.ps1'))
+    $artifacts.Add((New-Artifact (Join-Path $repoRoot 'tools\Set-ManualOutputCase.ps1') 'tools\Set-ManualOutputCase.ps1'))
 
     Add-TreeArtifacts $artifacts (Join-Path $repoRoot 'src\vba') 'src\vba'
     Add-TreeArtifacts $artifacts (Join-Path $repoRoot 'tools\SqlAnalysisFormatter.Parser') 'tools\SqlAnalysisFormatter.Parser'

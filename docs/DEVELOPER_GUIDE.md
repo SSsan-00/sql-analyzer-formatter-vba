@@ -7,6 +7,9 @@
 - `tools/SqlAnalysisFormatter.Parser`: ScriptDom を使う C# parser
 - `tests/SqlAnalysisFormatter.Parser.Tests`: MSTest による C# テスト
 - `tests/CRUD_TEST_CASES.md`: SQL 変換ケース資料
+- `tests/OutputReportCases.json`: 確定済み47ケースの入力 SQL と和名定義
+- `tests/SqlAnalysisFormatter.OutputExpectations.xlsx`: 確定済み47ケースの期待値ブック
+- `tools/run-output-golden-tests.ps1`: 実 Excel による値・書式回帰テスト
 
 ## テスト
 
@@ -22,7 +25,11 @@ parser exe 経由も確認する場合は、先に publish します。
 ```powershell
 powershell -ExecutionPolicy Bypass -File tools/publish-parser.ps1
 powershell -ExecutionPolicy Bypass -File tools/run-vba-tests.ps1 -ParserExePath dist/parser/SqlAnalysisFormatter.Parser.exe
+powershell -ExecutionPolicy Bypass -File tools/run-output-golden-tests.ps1
 ```
+
+`run-output-golden-tests.ps1` は47ケースについてセル値、主要罫線、塗り、フォント、折り返し、行高、列幅、目盛り線を実 Excel で比較します。
+機能追加は、失敗するテストを先に追加し、最小実装で成功させ、全回帰テストを維持したまま整理する TDD サイクルで進めます。
 
 ## Publish
 
