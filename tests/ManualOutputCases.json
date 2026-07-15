@@ -538,6 +538,24 @@
       "definitions": [
         { "table_id": "tb1", "table_name_ja": "ユーザー", "field_id": "status", "field_name_ja": "状態" }
       ]
+    },
+    {
+      "id": "SEL-059",
+      "title": "SELECT INTO",
+      "sql_lines": [
+        "select",
+        "    tb1.user_id",
+        "    , tb1.email ",
+        "into user_export ",
+        "from",
+        "    users as tb1"
+      ],
+      "definitions": [
+        { "table_id": "user_export", "table_name_ja": "ユーザー出力", "field_id": "user_id", "field_name_ja": "ユーザーID" },
+        { "table_id": "user_export", "table_name_ja": "ユーザー出力", "field_id": "email", "field_name_ja": "メール" },
+        { "table_id": "tb1", "table_name_ja": "ユーザー", "field_id": "user_id", "field_name_ja": "ユーザーID" },
+        { "table_id": "tb1", "table_name_ja": "ユーザー", "field_id": "email", "field_name_ja": "メール" }
+      ]
     }
   ]
 }
