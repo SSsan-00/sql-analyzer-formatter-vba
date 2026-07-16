@@ -414,14 +414,11 @@ public static class OutputSheetPlanBuilder
         var specification = statement.DeleteSpecification;
         var (subqueries, plans) = BuildLeadingSubqueryPlans(sql, statement, mappings);
         var directChildren = DirectChildSubqueries(specification, subqueries);
-        var references = BuildTableList(
+        var references = BuildModificationTableList(
+            specification.Target,
             specification.FromClause,
             mappings,
             directChildren.Select(child => child.Name));
-        if (references == "なし")
-        {
-            references = BuildTargetTableDisplay(specification.Target, mappings, includeIdentifier: true);
-        }
 
         var transferPlan = BuildDataTransferPlan(
             sql,
@@ -445,14 +442,11 @@ public static class OutputSheetPlanBuilder
         var specification = statement.UpdateSpecification;
         var (subqueries, plans) = BuildLeadingSubqueryPlans(sql, statement, mappings);
         var directChildren = DirectChildSubqueries(specification, subqueries);
-        var references = BuildTableList(
+        var references = BuildModificationTableList(
+            specification.Target,
             specification.FromClause,
             mappings,
             directChildren.Select(child => child.Name));
-        if (references == "なし")
-        {
-            references = BuildTargetTableDisplay(specification.Target, mappings, includeIdentifier: true);
-        }
 
         var transfers = specification.SetClauses
             .OfType<AssignmentSetClause>()
@@ -534,6 +528,22 @@ public static class OutputSheetPlanBuilder
         }
 
         return new OutputSheetPlan(cells, sections, row - 1, false);
+    }
+
+    /// <summary>
+    /// 更新対象、FROM句、サブクエリを更新系の参照テーブル一覧へ統合
+    /// </summary>
+    private static string BuildModificationTableList(
+        TableReference target,
+        FromClause? fromClause,
+        IReadOnlyList<MappingDefinition> mappings,
+        IEnumerable<string> additionalTables)
+    {
+        var targetDisplay = BuildTargetTableDisplay(target, mappings, includeIdentifier: true);
+        var displays = new[] { targetDisplay }
+            .Concat(BuildTableDisplays(fromClause, mappings, additionalTables))
+            .Distinct(StringComparer.OrdinalIgnoreCase);
+        return string.Join("、", displays);
     }
 
     /// <summary>

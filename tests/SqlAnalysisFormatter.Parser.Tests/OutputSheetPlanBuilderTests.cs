@@ -1345,6 +1345,168 @@ public sealed class OutputSheetPlanBuilderTests
     }
 
     /// <summary>
+    /// FROMなしUPDATEのEXISTSをサブクエリ表へ分離し、更新対象も参照表示へ残すことを確認
+    /// </summary>
+    [TestMethod]
+    public void Build_CreatesUpdateWhereExistsHybridFramesWithoutFromClause()
+    {
+        const string sql = """
+            UPDATE users
+            SET
+                status = 'INACTIVE'
+            WHERE
+                EXISTS (
+                    SELECT
+                        1
+                    FROM
+                        orders AS tb2
+                    WHERE
+                        tb2.user_id = users.user_id
+                        AND tb2.status = 'CANCELLED'
+                )
+            """;
+        MappingDefinition[] mappings =
+        [
+            new("users", "ユーザー", "status", "状態"),
+            new("tb2", "注文", "status", "状態")
+        ];
+
+        var plan = OutputSheetPlanBuilder.Build(sql, mappings);
+
+        Assert.IsFalse(plan.IsFallback);
+        Assert.AreEqual(11, plan.RowCount);
+        AssertCells(
+            plan,
+            (1, 1, "サブクエリ[SQ1]"),
+            (2, 1, "参照テーブル: ユーザー[users]、注文[tb2]"),
+            (3, 1, "取得項目"),
+            (3, 7, "取得項目1"),
+            (3, 15, ":"),
+            (3, 17, "1"),
+            (4, 1, "検索条件"),
+            (4, 17, "tb2.user_id = users.user_id"),
+            (5, 7, "AND"),
+            (5, 17, "tb2.status = 'CANCELLED'"),
+            (7, 1, "＜データ移送表＞"),
+            (8, 1, "参照テーブル: ユーザー[users]、SQ1"),
+            (9, 1, "項目"),
+            (9, 19, "移送元"),
+            (9, 37, "移送方法ほか"),
+            (10, 1, "status"),
+            (10, 37, "'INACTIVE'"),
+            (11, 1, "検索条件"),
+            (11, 17, "EXISTS (SQ1)"));
+    }
+
+    /// <summary>
+    /// UPDATE検索条件のスカラーサブクエリを先行表とSQ参照へ分離することを確認
+    /// </summary>
+    [TestMethod]
+    public void Build_CreatesUpdateWhereScalarSubqueryHybridFrames()
+    {
+        const string sql = """
+            UPDATE tb1
+            SET
+                status = 'REVIEW'
+            FROM
+                users AS tb1
+            WHERE
+                tb1.amount > (
+                    SELECT
+                        AVG(tb2.amount) AS average_amount
+                    FROM
+                        orders AS tb2
+                    WHERE
+                        tb2.user_id = tb1.user_id
+                )
+            """;
+        MappingDefinition[] mappings =
+        [
+            new("tb1", "ユーザー", "status", "状態"),
+            new("tb2", "注文", "amount", "金額")
+        ];
+
+        var plan = OutputSheetPlanBuilder.Build(sql, mappings);
+
+        Assert.IsFalse(plan.IsFallback);
+        Assert.AreEqual(10, plan.RowCount);
+        AssertCells(
+            plan,
+            (1, 1, "サブクエリ[SQ1]"),
+            (2, 1, "参照テーブル: ユーザー[tb1]、注文[tb2]"),
+            (3, 1, "取得項目"),
+            (3, 7, "取得項目1"),
+            (3, 15, ":"),
+            (3, 17, "average_amount"),
+            (3, 31, "※"),
+            (3, 32, "AVG(tb2.amount)"),
+            (4, 1, "検索条件"),
+            (4, 17, "tb2.user_id = tb1.user_id"),
+            (6, 1, "＜データ移送表＞"),
+            (7, 1, "参照テーブル: ユーザー[tb1]、SQ1"),
+            (8, 1, "項目"),
+            (8, 19, "移送元"),
+            (8, 37, "移送方法ほか"),
+            (9, 1, "status"),
+            (9, 37, "'REVIEW'"),
+            (10, 1, "検索条件"),
+            (10, 17, "tb1.amount > (SQ1)"));
+    }
+
+    /// <summary>
+    /// UPDATE検索条件のINサブクエリを先行表とSQ参照へ分離することを確認
+    /// </summary>
+    [TestMethod]
+    public void Build_CreatesUpdateWhereInSubqueryHybridFrames()
+    {
+        const string sql = """
+            UPDATE tb1
+            SET
+                status = 'ARCHIVED'
+            FROM
+                users AS tb1
+            WHERE
+                tb1.user_id IN (
+                    SELECT
+                        tb2.user_id
+                    FROM
+                        orders AS tb2
+                    WHERE
+                        tb2.created_at < @cutoff
+                )
+            """;
+        MappingDefinition[] mappings =
+        [
+            new("tb1", "ユーザー", "status", "状態"),
+            new("tb2", "注文", "user_id", "注文ユーザーID")
+        ];
+
+        var plan = OutputSheetPlanBuilder.Build(sql, mappings);
+
+        Assert.IsFalse(plan.IsFallback);
+        Assert.AreEqual(10, plan.RowCount);
+        AssertCells(
+            plan,
+            (1, 1, "サブクエリ[SQ1]"),
+            (2, 1, "参照テーブル: 注文[tb2]"),
+            (3, 1, "取得項目"),
+            (3, 7, "取得項目1"),
+            (3, 15, ":"),
+            (3, 17, "tb2.user_id"),
+            (4, 1, "検索条件"),
+            (4, 17, "tb2.created_at < @cutoff"),
+            (6, 1, "＜データ移送表＞"),
+            (7, 1, "参照テーブル: ユーザー[tb1]、SQ1"),
+            (8, 1, "項目"),
+            (8, 19, "移送元"),
+            (8, 37, "移送方法ほか"),
+            (9, 1, "status"),
+            (9, 37, "'ARCHIVED'"),
+            (10, 1, "検索条件"),
+            (10, 17, "tb1.user_id IN (SQ1)"));
+    }
+
+    /// <summary>
     /// 一時テーブルの物理名から和名を解決することを確認
     /// </summary>
     [TestMethod]
