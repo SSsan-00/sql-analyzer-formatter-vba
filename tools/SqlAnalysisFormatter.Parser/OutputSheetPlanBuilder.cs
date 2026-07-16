@@ -56,6 +56,12 @@ public static class OutputSheetPlanBuilder
         SelectStatement selectStatement,
         IReadOnlyList<MappingDefinition> mappings)
     {
+        if (selectStatement.Into is not null &&
+            UnwrapQueryExpression(selectStatement.QueryExpression) is QuerySpecification intoQuery)
+        {
+            return BuildSelectIntoStatement(sql, selectStatement, intoQuery, mappings);
+        }
+
         var subqueries = SubqueryCollector.Collect(selectStatement);
         var plans = new List<OutputSheetPlan>();
         foreach (var subquery in subqueries)
@@ -80,6 +86,161 @@ public static class OutputSheetPlanBuilder
         plans.Add(ReplaceSubqueries(wholePlan, sql, wholeChildren));
 
         return CombinePlans(plans);
+    }
+
+    /// <summary>
+    /// SELECT INTOをソース・DB定義・移送表のハイブリッドへ変換
+    /// </summary>
+    private static OutputSheetPlan BuildSelectIntoStatement(
+        string sql,
+        SelectStatement statement,
+        QuerySpecification sourceQuery,
+        IReadOnlyList<MappingDefinition> mappings)
+    {
+        var subqueries = SubqueryCollector.Collect(statement);
+        var plans = new List<OutputSheetPlan>();
+        foreach (var subquery in subqueries)
+        {
+            var children = DirectChildSubqueries(subquery.QueryExpression, subqueries);
+            var plan = BuildQueryExpression(
+                sql,
+                subquery.QueryExpression,
+                mappings,
+                $"サブクエリ[{subquery.Name}]",
+                children.Where(child => !child.IsNamed).Select(child => child.Name));
+            plans.Add(ReplaceSubqueries(plan, sql, children));
+        }
+
+        var sourceName = $"SQ{subqueries.Count + 1}";
+        var sourceChildren = DirectChildSubqueries(sourceQuery, subqueries);
+        var sourcePlan = BuildSelect(
+            sql,
+            sourceQuery,
+            mappings,
+            $"サブクエリ[{sourceName}]",
+            sourceChildren.Where(child => !child.IsNamed).Select(child => child.Name));
+        plans.Add(ReplaceSubqueries(sourcePlan, sql, sourceChildren));
+
+        var targetId = statement.Into.BaseIdentifier.Value;
+        var outputColumns = BuildSelectIntoColumns(
+            sql,
+            sourceQuery,
+            targetId,
+            sourceName,
+            mappings);
+        plans.Add(BuildSelectIntoDefinitionPlan(sourceName, outputColumns));
+
+        var targetName = ResolveTableName(targetId, mappings);
+        var transfers = outputColumns
+            .Select(column => new TransferItem(column.Name, column.Reference, string.Empty))
+            .ToArray();
+        plans.Add(BuildDataTransferPlan(
+            sql,
+            $"{targetName}、{sourceName}",
+            transfers,
+            null,
+            null,
+            mappings));
+
+        return CombinePlans(plans);
+    }
+
+    /// <summary>
+    /// SELECT INTOの出力項目名とSQ参照を1度だけ解決
+    /// </summary>
+    private static IReadOnlyList<SelectIntoColumn> BuildSelectIntoColumns(
+        string sql,
+        QuerySpecification sourceQuery,
+        string targetId,
+        string sourceName,
+        IReadOnlyList<MappingDefinition> mappings)
+    {
+        var columns = new List<SelectIntoColumn>(sourceQuery.SelectElements.Count);
+        foreach (var element in sourceQuery.SelectElements)
+        {
+            if (element is not SelectScalarExpression scalar)
+            {
+                throw new UnsupportedOutputException(
+                    "SELECT INTOの取得項目形式は未対応: " + element.GetType().Name,
+                    element);
+            }
+
+            string fieldId;
+            if (scalar.ColumnName is not null)
+            {
+                fieldId = FragmentText(sql, scalar.ColumnName);
+            }
+            else if (scalar.Expression is ColumnReferenceExpression column &&
+                column.MultiPartIdentifier?.Identifiers.Count > 0)
+            {
+                fieldId = column.MultiPartIdentifier.Identifiers[^1].Value;
+            }
+            else
+            {
+                throw new UnsupportedOutputException(
+                    "SELECT INTOの式には列エイリアスが必要",
+                    scalar.Expression);
+            }
+
+            var fieldName = ResolveOutputFieldName(targetId, fieldId, mappings);
+            columns.Add(new SelectIntoColumn(fieldName, $"{sourceName}.{fieldName}"));
+        }
+
+        return columns;
+    }
+
+    /// <summary>
+    /// SELECT INTOの出力別名を変換定義から和名へ解決
+    /// </summary>
+    private static string ResolveOutputFieldName(
+        string targetId,
+        string fieldId,
+        IReadOnlyList<MappingDefinition> mappings)
+    {
+        var mapping = mappings
+            .Where(item => string.Equals(item.FieldId, fieldId, StringComparison.OrdinalIgnoreCase))
+            .Where(item => !string.IsNullOrWhiteSpace(item.FieldName))
+            .OrderByDescending(item =>
+                string.Equals(item.TableId, targetId, StringComparison.OrdinalIgnoreCase))
+            .ThenByDescending(item => item.TableId == "-")
+            .FirstOrDefault();
+        return mapping?.FieldName ?? fieldId;
+    }
+
+    /// <summary>
+    /// SQの出力項目だけを参照するDB入出力項目定義を構成
+    /// </summary>
+    private static OutputSheetPlan BuildSelectIntoDefinitionPlan(
+        string sourceName,
+        IReadOnlyList<SelectIntoColumn> columns)
+    {
+        var cells = new List<OutputCell>
+        {
+            new(1, 1, "＜DB入出力項目定義＞"),
+            new(2, 1, "参照テーブル: " + sourceName)
+        };
+        for (var index = 0; index < columns.Count; index++)
+        {
+            var row = index + 3;
+            if (index == 0)
+            {
+                cells.Add(new OutputCell(row, 1, "取得項目"));
+            }
+            cells.Add(new OutputCell(row, 7, $"取得項目{index + 1}"));
+            cells.Add(new OutputCell(row, 15, ":"));
+            cells.Add(new OutputCell(row, 17, columns[index].Reference));
+        }
+
+        var sections = new List<OutputSection>
+        {
+            new(OutputSectionKind.Reference, 2, 2)
+        };
+        if (columns.Count > 0)
+        {
+            sections.Add(new OutputSection(OutputSectionKind.Standard, 3, columns.Count + 2));
+        }
+
+        return new OutputSheetPlan(cells, sections, columns.Count + 2, false);
     }
 
     /// <summary>
@@ -2041,6 +2202,8 @@ public static class OutputSheetPlanBuilder
     }
 
     private sealed record TransferItem(string Target, string Source, string Method);
+
+    private sealed record SelectIntoColumn(string Name, string Reference);
 
     private sealed record ConditionPart(string Connector, BooleanExpression Expression);
 

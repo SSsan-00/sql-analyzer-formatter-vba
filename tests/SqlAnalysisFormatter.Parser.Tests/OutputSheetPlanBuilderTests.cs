@@ -842,6 +842,98 @@ public sealed class OutputSheetPlanBuilderTests
     }
 
     /// <summary>
+    /// SELECT INTOをサブクエリ・DB定義・データ移送表のハイブリッドへ変換することを確認
+    /// </summary>
+    [TestMethod]
+    public void Build_CreatesSelectIntoHybridFrames()
+    {
+        const string sql = """
+            select
+                tb1.ユーザーID
+                , tb1.メール
+            into user_export
+            from
+                users as tb1
+            """;
+        MappingDefinition[] mappings =
+        [
+            new("user_export", "ユーザー出力", "", ""),
+            new("tb1", "ユーザー", "", "")
+        ];
+
+        var plan = OutputSheetPlanBuilder.Build(sql, mappings);
+
+        Assert.IsFalse(plan.IsFallback);
+        Assert.AreEqual(15, plan.RowCount);
+        AssertCells(
+            plan,
+            (1, 1, "サブクエリ[SQ1]"),
+            (2, 1, "参照テーブル: ユーザー[tb1]"),
+            (3, 1, "取得項目"),
+            (3, 7, "取得項目1"),
+            (3, 15, ":"),
+            (3, 17, "tb1.ユーザーID"),
+            (4, 7, "取得項目2"),
+            (4, 15, ":"),
+            (4, 17, "tb1.メール"),
+            (6, 1, "＜DB入出力項目定義＞"),
+            (7, 1, "参照テーブル: SQ1"),
+            (8, 1, "取得項目"),
+            (8, 7, "取得項目1"),
+            (8, 15, ":"),
+            (8, 17, "SQ1.ユーザーID"),
+            (9, 7, "取得項目2"),
+            (9, 15, ":"),
+            (9, 17, "SQ1.メール"),
+            (11, 1, "＜データ移送表＞"),
+            (12, 1, "参照テーブル: ユーザー出力、SQ1"),
+            (13, 1, "項目"),
+            (13, 19, "移送元"),
+            (13, 37, "移送方法ほか"),
+            (14, 1, "ユーザーID"),
+            (14, 19, "SQ1.ユーザーID"),
+            (15, 1, "メール"),
+            (15, 19, "SQ1.メール"));
+    }
+
+    /// <summary>
+    /// SELECT INTOの列エイリアスを変換定義の和名へ解決することを確認
+    /// </summary>
+    [TestMethod]
+    public void Build_ResolvesSelectIntoAliasNamesAcrossHybridFrames()
+    {
+        const string sql = """
+            select
+                tb1.ユーザーID
+                , coalesce(tb1.氏名, tb1.メール) as display_name
+                , count(tb1.ユーザーID) as user_count
+            into user_summary
+            from
+                users as tb1
+            group by
+                tb1.ユーザーID
+                , tb1.氏名
+                , tb1.メール
+            """;
+        MappingDefinition[] mappings =
+        [
+            new("user_summary", "ユーザー集計", "", ""),
+            new("tb1", "ユーザー", "", ""),
+            new("-", "", "display_name", "表示名"),
+            new("-", "", "user_count", "ユーザー件数")
+        ];
+
+        var plan = OutputSheetPlanBuilder.Build(sql, mappings);
+
+        Assert.IsFalse(plan.IsFallback);
+        Assert.AreEqual(2, plan.Cells.Count(cell => cell.Value == "SQ1.表示名"));
+        Assert.AreEqual(2, plan.Cells.Count(cell => cell.Value == "SQ1.ユーザー件数"));
+        Assert.IsTrue(plan.Cells.Any(cell => cell.Column == 1 && cell.Value == "表示名"));
+        Assert.IsTrue(plan.Cells.Any(cell => cell.Column == 1 && cell.Value == "ユーザー件数"));
+        Assert.AreEqual("参照テーブル: ユーザー集計、SQ1", plan.Cells.Single(cell => cell.Value.StartsWith("参照テーブル: ユーザー集計", StringComparison.Ordinal)).Value);
+    }
+
+    /// <summary>
     /// DELETEを移送行なしの条件表へ変換することを確認
     /// </summary>
     [TestMethod]
