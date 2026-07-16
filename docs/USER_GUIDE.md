@@ -133,6 +133,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\SqlAnalysisFormatter.u
 
 - SELECT INTOはクエリの複雑度にかかわらず、上記3表をこの順で出力します。
 - 更新系SQLにSELECT処理が含まれる場合は、SELECTの解析表を先、最終的なデータ移送表を後に出力します。
+- UPDATEの検索条件に`EXISTS`、`IN (SELECT ...)`、比較用サブクエリがある場合も、SELECTを`サブクエリ[SQn]`へ分け、データ移送表の検索条件からSQ名で参照します。
+- FROM句がないUPDATEでも、更新対象テーブルをデータ移送表の参照テーブルへ表示します。
 - WITH句は名前付きサブクエリとして扱います。
 - ネストしたサブクエリは内側から外側、最後にクエリ全体の順で出力します。
 - 無名サブクエリには`SQ1`、`SQ2`の名前を付けます。

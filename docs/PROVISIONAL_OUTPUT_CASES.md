@@ -21,6 +21,9 @@
 | SEL-062 | UPDATE SET内のTOP付きスカラーサブクエリ | SELECTを`SQ1`へ出力し、更新項目の移送元を`SQ1.金額`とする |
 | SEL-063 | 派生SELECTをJOINするUPDATE | `サブクエリ[sq]`を先に出力し、JOINを含むデータ移送表を後に出力 |
 | SEL-064 | EXISTS内にSELECTを持つDELETE | SELECTを`SQ1`へ出力し、削除条件を`EXISTS (SQ1)`とする |
+| SEL-065 | FROMなしUPDATEのEXISTS検索条件 | SELECTを`SQ1`へ出力し、更新対象と`SQ1`を最終表の参照テーブルへ残す |
+| SEL-066 | UPDATEの比較条件にあるスカラーサブクエリ | 集計SELECTを`SQ1`へ出力し、比較対象を`(SQ1)`へ置換する |
+| SEL-067 | UPDATEのIN検索条件 | SELECTを`SQ1`へ出力し、検索条件を`IN (SQ1)`へ置換する |
 
 SQLはA5:SQL Mk-2 2.21.2の`Ctrl+Q`で実整形し、`tests/ManualOutputCases.json`へ保存している。
 
