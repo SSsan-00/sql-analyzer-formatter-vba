@@ -504,6 +504,21 @@ public static class OutputSheetPlanBuilder
             foreach (var transfer in transfers)
             {
                 cells.Add(new OutputCell(row, 1, transfer.Target));
+                if (transfer.Expression is not null &&
+                    DirectCaseExpressions(transfer.Expression).Count > 0)
+                {
+                    row += WriteScalarExpression(
+                        cells,
+                        sql,
+                        transfer.Expression,
+                        row,
+                        displayName: null,
+                        valueColumn: 19,
+                        markerColumn: 35,
+                        detailColumn: 37);
+                    continue;
+                }
+
                 if (transfer.Source.Length > 0)
                 {
                     cells.Add(new OutputCell(row, 19, transfer.Source));
@@ -846,18 +861,51 @@ public static class OutputSheetPlanBuilder
 
         if (query.OffsetClause is not null)
         {
+            var startRow = row;
             cells.Add(new OutputCell(row, 1, "取得範囲"));
-            cells.Add(new OutputCell(row, 7, FragmentText(sql, query.OffsetClause)));
-            sections.Add(new OutputSection(OutputSectionKind.Standard, row, row));
-            row++;
+            var cases = DirectCaseExpressions(query.OffsetClause);
+            if (cases.Count == 0)
+            {
+                cells.Add(new OutputCell(row, 7, FragmentText(sql, query.OffsetClause)));
+                row++;
+            }
+            else
+            {
+                cells.Add(new OutputCell(
+                    row,
+                    7,
+                    RenderExpressionWithCasePlaceholders(sql, query.OffsetClause, cases)));
+                cells.Add(new OutputCell(row, 15, "※"));
+                row += WriteEmbeddedCaseBranches(cells, sql, cases, row, 17);
+            }
+            sections.Add(new OutputSection(OutputSectionKind.Standard, startRow, row - 1));
         }
 
         if (query.TopRowFilter is not null)
         {
+            var startRow = row;
             cells.Add(new OutputCell(row, 1, "取得件数"));
-            cells.Add(new OutputCell(row, 7, RenderTopCount(sql, query.TopRowFilter.Expression)));
-            sections.Add(new OutputSection(OutputSectionKind.Standard, row, row));
-            row++;
+            var topExpression = query.TopRowFilter.Expression is ParenthesisExpression parenthesized
+                ? parenthesized.Expression
+                : query.TopRowFilter.Expression;
+            if (DirectCaseExpressions(topExpression).Count == 0)
+            {
+                cells.Add(new OutputCell(row, 7, RenderTopCount(sql, query.TopRowFilter.Expression)));
+                row++;
+            }
+            else
+            {
+                row += WriteScalarExpression(
+                    cells,
+                    sql,
+                    topExpression,
+                    row,
+                    displayName: null,
+                    valueColumn: 7,
+                    markerColumn: 15,
+                    detailColumn: 17);
+            }
+            sections.Add(new OutputSection(OutputSectionKind.Standard, startRow, row - 1));
         }
 
         if (query.UniqueRowFilter == UniqueRowFilter.Distinct)
@@ -1025,20 +1073,23 @@ public static class OutputSheetPlanBuilder
         ScalarExpression expression,
         int row,
         string? displayName,
-        string valueSuffix = "")
+        string valueSuffix = "",
+        int valueColumn = 17,
+        int markerColumn = 31,
+        int detailColumn = 32)
     {
         var cases = DirectCaseExpressions(expression);
         if (cases.Count == 0)
         {
             if (displayName is null)
             {
-                cells.Add(new OutputCell(row, 17, DisplayText(sql, expression) + valueSuffix));
+                cells.Add(new OutputCell(row, valueColumn, DisplayText(sql, expression) + valueSuffix));
             }
             else
             {
-                cells.Add(new OutputCell(row, 17, displayName));
-                cells.Add(new OutputCell(row, 31, "※"));
-                cells.Add(new OutputCell(row, 32, DisplayText(sql, expression)));
+                cells.Add(new OutputCell(row, valueColumn, displayName));
+                cells.Add(new OutputCell(row, markerColumn, "※"));
+                cells.Add(new OutputCell(row, detailColumn, DisplayText(sql, expression)));
             }
 
             return 1;
@@ -1050,25 +1101,25 @@ public static class OutputSheetPlanBuilder
             var value = isDirectCase
                 ? "CASE結果"
                 : RenderExpressionWithCasePlaceholders(sql, expression, cases);
-            cells.Add(new OutputCell(row, 17, value + valueSuffix));
-            cells.Add(new OutputCell(row, 31, "※"));
+            cells.Add(new OutputCell(row, valueColumn, value + valueSuffix));
+            cells.Add(new OutputCell(row, markerColumn, "※"));
             return isDirectCase
-                ? WriteCaseBranches(cells, sql, cases[0], row)
-                : WriteEmbeddedCaseBranches(cells, sql, cases, row, 32);
+                ? WriteCaseBranches(cells, sql, cases[0], row, detailColumn)
+                : WriteEmbeddedCaseBranches(cells, sql, cases, row, detailColumn);
         }
 
-        cells.Add(new OutputCell(row, 17, displayName));
-        cells.Add(new OutputCell(row, 31, "※"));
+        cells.Add(new OutputCell(row, valueColumn, displayName));
+        cells.Add(new OutputCell(row, markerColumn, "※"));
         if (isDirectCase)
         {
-            return WriteCaseBranches(cells, sql, cases[0], row);
+            return WriteCaseBranches(cells, sql, cases[0], row, detailColumn);
         }
 
         cells.Add(new OutputCell(
             row,
-            32,
+            detailColumn,
             RenderExpressionWithCasePlaceholders(sql, expression, cases)));
-        return WriteEmbeddedCaseBranches(cells, sql, cases, row, 34);
+        return WriteEmbeddedCaseBranches(cells, sql, cases, row, detailColumn + 2);
     }
 
     /// <summary>
@@ -2311,13 +2362,13 @@ public static class OutputSheetPlanBuilder
     private static TransferItem CreateTransferItem(
         string target,
         string expressionText,
-        TSqlFragment expression)
+        ScalarExpression expression)
     {
         var visitor = new ColumnReferenceVisitor();
         expression.Accept(visitor);
         return visitor.Found
-            ? new TransferItem(target, expressionText, string.Empty)
-            : new TransferItem(target, string.Empty, expressionText);
+            ? new TransferItem(target, expressionText, string.Empty, expression)
+            : new TransferItem(target, string.Empty, expressionText, expression);
     }
 
     /// <summary>
@@ -2630,7 +2681,11 @@ public static class OutputSheetPlanBuilder
         public TSqlFragment? Fragment { get; } = fragment;
     }
 
-    private sealed record TransferItem(string Target, string Source, string Method);
+    private sealed record TransferItem(
+        string Target,
+        string Source,
+        string Method,
+        ScalarExpression? Expression = null);
 
     private sealed record SelectIntoColumn(string Name, string Reference);
 

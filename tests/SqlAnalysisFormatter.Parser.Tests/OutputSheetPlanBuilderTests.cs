@@ -352,6 +352,43 @@ public sealed class OutputSheetPlanBuilderTests
     }
 
     /// <summary>
+    /// TOPとOFFSET内のCASEを取得制御式と分岐へ展開することを確認
+    /// </summary>
+    [TestMethod]
+    public void Build_ExpandsCasesInsideTopAndOffset()
+    {
+        const string topSql = """
+            SELECT TOP (CASE WHEN @all_rows = 1 THEN 100 ELSE 10 END)
+                tb1.ユーザーID
+            FROM
+                users AS tb1
+            """;
+        const string offsetSql = """
+            SELECT
+                tb1.ユーザーID
+            FROM
+                users AS tb1
+            ORDER BY
+                tb1.ユーザーID
+            OFFSET (CASE WHEN @skip_rows = 1 THEN 10 ELSE 0 END) ROWS
+            FETCH NEXT 20 ROWS ONLY
+            """;
+        MappingDefinition[] mappings = [new("tb1", "ユーザー", "", "")];
+
+        var topPlan = OutputSheetPlanBuilder.Build(topSql, mappings);
+        var offsetPlan = OutputSheetPlanBuilder.Build(offsetSql, mappings);
+
+        Assert.AreEqual("CASE結果", CellValue(topPlan, 3, 7));
+        Assert.AreEqual("※", CellValue(topPlan, 3, 15));
+        Assert.AreEqual("@all_rows = 1 → 100", CellValue(topPlan, 3, 17));
+        Assert.AreEqual("それ以外 → 10", CellValue(topPlan, 4, 17));
+        Assert.AreEqual("OFFSET (CASE結果) ROWS FETCH NEXT 20 ROWS ONLY", CellValue(offsetPlan, 3, 7));
+        Assert.AreEqual("※", CellValue(offsetPlan, 3, 15));
+        Assert.AreEqual("@skip_rows = 1 → 10", CellValue(offsetPlan, 3, 17));
+        Assert.AreEqual("それ以外 → 0", CellValue(offsetPlan, 4, 17));
+    }
+
+    /// <summary>
     /// 複数ON条件を持つJOINフレームを作成できることを確認
     /// </summary>
     [TestMethod]
@@ -1199,6 +1236,28 @@ public sealed class OutputSheetPlanBuilderTests
     }
 
     /// <summary>
+    /// INSERT VALUESのCASEを移送元と分岐へ展開することを確認
+    /// </summary>
+    [TestMethod]
+    public void Build_ExpandsCaseInsideInsertValues()
+    {
+        const string sql = """
+            INSERT INTO users(状態)
+            VALUES (CASE WHEN @active = 1 THEN 'ACTIVE' ELSE 'INACTIVE' END)
+            """;
+
+        var plan = OutputSheetPlanBuilder.Build(sql, [new("users", "ユーザー", "", "")]);
+
+        Assert.IsFalse(plan.IsFallback);
+        Assert.AreEqual(5, plan.RowCount);
+        Assert.AreEqual("状態", CellValue(plan, 4, 1));
+        Assert.AreEqual("CASE結果", CellValue(plan, 4, 19));
+        Assert.AreEqual("※", CellValue(plan, 4, 35));
+        Assert.AreEqual("@active = 1 → 'ACTIVE'", CellValue(plan, 4, 37));
+        Assert.AreEqual("それ以外 → 'INACTIVE'", CellValue(plan, 5, 37));
+    }
+
+    /// <summary>
     /// SELECT INTOをサブクエリ・DB定義・データ移送表のハイブリッドへ変換することを確認
     /// </summary>
     [TestMethod]
@@ -1438,6 +1497,35 @@ public sealed class OutputSheetPlanBuilderTests
 
         Assert.AreEqual("tb2.氏名", CellValue(plan, 4, 19));
         Assert.IsNull(CellValue(plan, 4, 37));
+    }
+
+    /// <summary>
+    /// UPDATE SETのCASEと複合WHEN条件を移送表の複数行へ展開することを確認
+    /// </summary>
+    [TestMethod]
+    public void Build_ExpandsCaseInsideUpdateSet()
+    {
+        const string sql = """
+            UPDATE tb1
+            SET
+                状態 = CASE
+                    WHEN tb1.削除日時 IS NULL AND tb1.有効区分 = 1 THEN 'ACTIVE'
+                    ELSE 'INACTIVE'
+                END
+            FROM
+                users AS tb1
+            """;
+
+        var plan = OutputSheetPlanBuilder.Build(sql, [new("tb1", "ユーザー", "", "")]);
+
+        Assert.IsFalse(plan.IsFallback);
+        Assert.AreEqual(6, plan.RowCount);
+        Assert.AreEqual("状態", CellValue(plan, 4, 1));
+        Assert.AreEqual("CASE結果", CellValue(plan, 4, 19));
+        Assert.AreEqual("※", CellValue(plan, 4, 35));
+        Assert.AreEqual("tb1.削除日時 IS NULL", CellValue(plan, 4, 37));
+        Assert.AreEqual("AND tb1.有効区分 = 1 → 'ACTIVE'", CellValue(plan, 5, 37));
+        Assert.AreEqual("それ以外 → 'INACTIVE'", CellValue(plan, 6, 37));
     }
 
     /// <summary>
