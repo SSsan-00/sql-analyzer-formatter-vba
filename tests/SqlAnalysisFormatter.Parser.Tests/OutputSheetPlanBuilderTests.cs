@@ -939,10 +939,10 @@ public sealed class OutputSheetPlanBuilderTests
     }
 
     /// <summary>
-    /// 派生テーブルJOINを例外にせず原因付きフォールバックへ変換することを確認
+    /// 派生テーブルJOINを名前付きサブクエリと全体クエリへ展開することを確認
     /// </summary>
     [TestMethod]
-    public void Build_FallsBackForDerivedTableJoinWithoutThrowing()
+    public void Build_WritesDerivedTableJoinAsNamedSubquery()
     {
         const string sql = """
             SELECT
@@ -957,16 +957,68 @@ public sealed class OutputSheetPlanBuilderTests
                 ) AS sq
                     ON tb1.ID = sq.user_id
             """;
+        MappingDefinition[] mappings =
+        [
+            new("tb1", "ユーザー", "", ""),
+            new("orders", "注文", "", "")
+        ];
 
-        var plan = OutputSheetPlanBuilder.Build(sql, []);
+        var plan = OutputSheetPlanBuilder.Build(sql, mappings);
 
-        Assert.IsTrue(plan.IsFallback);
-        Assert.AreEqual("派生テーブルを含むJOINは未対応", plan.FallbackReason);
-        Assert.AreEqual(6, plan.FallbackQueryStartRow);
-        Assert.AreEqual(9, plan.FallbackQueryEndRow);
-        Assert.AreEqual(
-            "フォールバック原因: 派生テーブルを含むJOINは未対応（対象クエリ: アウトプットシート 6～9行目）",
-            CellValue(plan, plan.RowCount, 1));
+        Assert.IsFalse(plan.IsFallback);
+        Assert.AreEqual("サブクエリ[sq]", CellValue(plan, 1, 1));
+        Assert.AreEqual("参照テーブル: 注文[orders]", CellValue(plan, 2, 1));
+        Assert.AreEqual("＜DB入出力項目定義＞", CellValue(plan, 5, 1));
+        Assert.AreEqual("参照テーブル: ユーザー[tb1]、sq", CellValue(plan, 6, 1));
+        Assert.AreEqual("＜ユーザー[tb1] INNER JOIN sq＞", CellValue(plan, 8, 17));
+        Assert.AreEqual("tb1.ID = sq.user_id", CellValue(plan, 9, 17));
+    }
+
+    /// <summary>
+    /// ネストした相関サブクエリへ外側テーブルと子サブクエリを記載することを確認
+    /// </summary>
+    [TestMethod]
+    public void Build_WritesCorrelatedReferencesForNestedSubqueries()
+    {
+        const string sql = """
+            select
+                tb1.ユーザーID
+                , tb1.氏名
+            from
+                users as tb1
+            where
+                exists (
+                    select
+                        1
+                    from
+                        orders as tb2
+                    where
+                        tb2.注文ユーザーID = tb1.ユーザーID
+                        and tb2.金額 > (
+                            select
+                                avg(tb3.金額)
+                            from
+                                orders as tb3
+                            where
+                                tb3.状態 = tb2.状態
+                        )
+                )
+            """;
+        MappingDefinition[] mappings =
+        [
+            new("tb1", "ユーザー", "", ""),
+            new("tb2", "注文", "", ""),
+            new("tb3", "注文", "", "")
+        ];
+
+        var plan = OutputSheetPlanBuilder.Build(sql, mappings);
+
+        Assert.IsFalse(plan.IsFallback);
+        Assert.AreEqual("参照テーブル: 注文[tb2]、注文[tb3]", CellValue(plan, 2, 1));
+        Assert.AreEqual("AVG(tb3.金額)", CellValue(plan, 3, 17));
+        Assert.AreEqual("参照テーブル: ユーザー[tb1]、注文[tb2]、SQ1", CellValue(plan, 7, 1));
+        Assert.AreEqual("tb2.金額 > (SQ1)", CellValue(plan, 10, 17));
+        Assert.AreEqual("EXISTS (SQ2)", CellValue(plan, 16, 17));
     }
 
     /// <summary>

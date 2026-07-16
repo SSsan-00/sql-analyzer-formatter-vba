@@ -421,10 +421,18 @@ public static class OutputSheetPlanBuilder
             var value = cell.Value;
             foreach (var subquery in subqueries)
             {
-                value = value.Replace(
+                var sourceTexts = new[]
+                {
+                    RawFragmentText(sql, subquery.QueryExpression),
                     FragmentText(sql, subquery.QueryExpression),
-                    subquery.Name,
-                    StringComparison.Ordinal);
+                    DisplayText(sql, subquery.QueryExpression)
+                };
+                foreach (var sourceText in sourceTexts
+                    .Where(text => text.Length > 0)
+                    .Distinct(StringComparer.Ordinal))
+                {
+                    value = value.Replace(sourceText, subquery.Name, StringComparison.Ordinal);
+                }
                 value = Regex.Replace(
                     value,
                     @"\(\s*" + Regex.Escape(subquery.Name) + @"\s*\)",
@@ -678,7 +686,7 @@ public static class OutputSheetPlanBuilder
             return 1;
         }
 
-        cells.Add(new OutputCell(row, 17, RenderSelectElement(sql, element)));
+        cells.Add(new OutputCell(row, 17, RenderSelectElementForDisplay(sql, element)));
         return 1;
     }
 
@@ -937,6 +945,11 @@ public static class OutputSheetPlanBuilder
     /// </summary>
     private static string ConditionDisplayText(string sql, TSqlFragment expression)
     {
+        if (expression is ExistsPredicate existsPredicate)
+        {
+            return $"EXISTS ({DisplayText(sql, existsPredicate.Subquery.QueryExpression)})";
+        }
+
         var rawText = RawFragmentText(sql, expression);
         var hasSpacedUnarySign = Regex.IsMatch(
             rawText,
@@ -1088,22 +1101,21 @@ public static class OutputSheetPlanBuilder
                 cells.Add(new OutputCell(row, 1, "結合条件"));
             }
 
-            var leftTables = EnumerateNamedTables(join.FirstTableReference).ToArray();
-            var rightTables = EnumerateNamedTables(join.SecondTableReference).ToArray();
+            var leftTables = EnumerateJoinDisplays(join.FirstTableReference, mappings).ToArray();
+            var rightTables = EnumerateJoinDisplays(join.SecondTableReference, mappings).ToArray();
             if (leftTables.Length == 0 || rightTables.Length == 0)
             {
                 var unsupportedTable = leftTables.Length == 0
                     ? join.FirstTableReference
                     : join.SecondTableReference;
-                TSqlFragment causeFragment = unsupportedTable is QueryDerivedTable derivedTable
-                    ? derivedTable.QueryExpression
-                    : unsupportedTable;
-                throw new UnsupportedOutputException("派生テーブルを含むJOINは未対応", causeFragment);
+                throw new UnsupportedOutputException(
+                    "JOIN対象のテーブル形式は未対応: " + unsupportedTable.GetType().Name,
+                    unsupportedTable);
             }
 
             var leftTable = leftTables[^1];
             var rightTable = rightTables[0];
-            var joinText = $"＜{BuildTableDisplay(leftTable, mappings)} {JoinTypeText(join.QualifiedJoinType)} {BuildTableDisplay(rightTable, mappings)}＞";
+            var joinText = $"＜{leftTable} {JoinTypeText(join.QualifiedJoinType)} {rightTable}＞";
             cells.Add(new OutputCell(row, 17, joinText));
             row++;
 
@@ -1139,6 +1151,37 @@ public static class OutputSheetPlanBuilder
         }
 
         yield return join;
+    }
+
+    /// <summary>
+    /// JOIN片側の実テーブルと派生テーブル名を左から列挙
+    /// </summary>
+    private static IEnumerable<string> EnumerateJoinDisplays(
+        TableReference table,
+        IReadOnlyList<MappingDefinition> mappings)
+    {
+        switch (table)
+        {
+            case NamedTableReference named:
+                yield return BuildTableDisplay(named, mappings);
+                break;
+            case QueryDerivedTable queryDerived:
+                yield return queryDerived.Alias?.Value ?? MissingName;
+                break;
+            case InlineDerivedTable inlineDerived:
+                yield return $"派生テーブル[{inlineDerived.Alias?.Value ?? MissingName}]";
+                break;
+            case QualifiedJoin join:
+                foreach (var display in EnumerateJoinDisplays(join.FirstTableReference, mappings))
+                {
+                    yield return display;
+                }
+                foreach (var display in EnumerateJoinDisplays(join.SecondTableReference, mappings))
+                {
+                    yield return display;
+                }
+                break;
+        }
     }
 
     /// <summary>
@@ -1220,7 +1263,18 @@ public static class OutputSheetPlanBuilder
         IReadOnlyList<MappingDefinition> mappings,
         IEnumerable<string> additionalTables)
     {
-        return BuildTableList(query.FromClause, mappings, additionalTables);
+        var localIdentifiers = (query.FromClause?.TableReferences
+            .SelectMany(EnumerateTableIdentifiers)
+            ?? [])
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var correlatedDisplays = DirectColumnQualifierCollector.Collect(query)
+            .Where(identifier => !localIdentifiers.Contains(identifier))
+            .Select(identifier => BuildTableDisplay(identifier, mappings));
+        var displays = correlatedDisplays
+            .Concat(BuildTableDisplays(query.FromClause, mappings, additionalTables))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        return displays.Length == 0 ? "なし" : string.Join("、", displays);
     }
 
     /// <summary>
@@ -1295,6 +1349,16 @@ public static class OutputSheetPlanBuilder
     }
 
     /// <summary>
+    /// テーブル識別子から和名付き表示を作成
+    /// </summary>
+    private static string BuildTableDisplay(
+        string tableId,
+        IReadOnlyList<MappingDefinition> mappings)
+    {
+        return $"{ResolveTableName(tableId, mappings)}[{tableId}]";
+    }
+
+    /// <summary>
     /// 一時テーブルは別名で未解決の場合に物理名でも和名を検索
     /// </summary>
     private static string ResolveTableName(
@@ -1356,6 +1420,35 @@ public static class OutputSheetPlanBuilder
     }
 
     /// <summary>
+    /// FROM句のローカルテーブル識別子を列挙
+    /// </summary>
+    private static IEnumerable<string> EnumerateTableIdentifiers(TableReference table)
+    {
+        switch (table)
+        {
+            case NamedTableReference named:
+                yield return named.Alias?.Value ?? named.SchemaObject.BaseIdentifier.Value;
+                break;
+            case QueryDerivedTable queryDerived when queryDerived.Alias is not null:
+                yield return queryDerived.Alias.Value;
+                break;
+            case InlineDerivedTable inlineDerived when inlineDerived.Alias is not null:
+                yield return inlineDerived.Alias.Value;
+                break;
+            case QualifiedJoin join:
+                foreach (var identifier in EnumerateTableIdentifiers(join.FirstTableReference))
+                {
+                    yield return identifier;
+                }
+                foreach (var identifier in EnumerateTableIdentifiers(join.SecondTableReference))
+                {
+                    yield return identifier;
+                }
+                break;
+        }
+    }
+
+    /// <summary>
     /// 取得項目から式本体を表示
     /// </summary>
     private static string RenderSelectElement(string sql, SelectElement element)
@@ -1365,6 +1458,19 @@ public static class OutputSheetPlanBuilder
             SelectScalarExpression scalar => FragmentText(sql, scalar.Expression),
             SelectStarExpression star => FragmentText(sql, star),
             _ => FragmentText(sql, element)
+        };
+    }
+
+    /// <summary>
+    /// SELECT取得項目を帳票向け表記で表示
+    /// </summary>
+    private static string RenderSelectElementForDisplay(string sql, SelectElement element)
+    {
+        return element switch
+        {
+            SelectScalarExpression scalar => DisplayText(sql, scalar.Expression),
+            SelectStarExpression star => DisplayText(sql, star),
+            _ => DisplayText(sql, element)
         };
     }
 
@@ -1664,7 +1770,7 @@ public static class OutputSheetPlanBuilder
         /// </summary>
         public override void ExplicitVisit(QueryDerivedTable node)
         {
-            Add(node.QueryExpression, null, false);
+            Add(node.QueryExpression, node.Alias?.Value, false);
             base.ExplicitVisit(node);
         }
 
@@ -1736,6 +1842,76 @@ public static class OutputSheetPlanBuilder
         public override void ExplicitVisit(ColumnReferenceExpression node)
         {
             Found = true;
+        }
+    }
+
+    /// <summary>
+    /// 子サブクエリを除いた列修飾子を出現順に収集
+    /// </summary>
+    private sealed class DirectColumnQualifierCollector : TSqlFragmentVisitor
+    {
+        private readonly List<string> _identifiers = [];
+        private readonly HashSet<string> _seen = new(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// クエリ直下の列修飾子を収集
+        /// </summary>
+        public static IReadOnlyList<string> Collect(QuerySpecification query)
+        {
+            var collector = new DirectColumnQualifierCollector();
+            query.Accept(collector);
+            return collector._identifiers;
+        }
+
+        /// <summary>
+        /// 2要素以上の列参照からテーブル修飾子を追加
+        /// </summary>
+        public override void ExplicitVisit(ColumnReferenceExpression node)
+        {
+            var identifiers = node.MultiPartIdentifier?.Identifiers;
+            if (identifiers is null || identifiers.Count < 2)
+            {
+                return;
+            }
+
+            var identifier = identifiers[^2].Value;
+            if (_seen.Add(identifier))
+            {
+                _identifiers.Add(identifier);
+            }
+        }
+
+        /// <summary>
+        /// スカラーサブクエリ内部を収集対象から除外
+        /// </summary>
+        public override void ExplicitVisit(ScalarSubquery node)
+        {
+        }
+
+        /// <summary>
+        /// EXISTSサブクエリ内部を収集対象から除外
+        /// </summary>
+        public override void ExplicitVisit(ExistsPredicate node)
+        {
+        }
+
+        /// <summary>
+        /// INサブクエリ内部を収集対象から除外
+        /// </summary>
+        public override void ExplicitVisit(InPredicate node)
+        {
+            node.Expression.Accept(this);
+            foreach (var value in node.Values)
+            {
+                value.Accept(this);
+            }
+        }
+
+        /// <summary>
+        /// FROM内の派生クエリを収集対象から除外
+        /// </summary>
+        public override void ExplicitVisit(QueryDerivedTable node)
+        {
         }
     }
 
