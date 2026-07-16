@@ -362,7 +362,6 @@
     },
     {
       "id": "SEL-072",
-      "review_status": "暫定確定（ユーザーレビュー未実施）",
       "sql_lines": ["insert ", "into users(状態) ", "values ( ", "    case ", "        when @active = 1 ", "            then 'ACTIVE' ", "        else 'INACTIVE' ", "        end", ")"],
       "tables": { "users": "ユーザー" }
     },

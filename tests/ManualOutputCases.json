@@ -881,7 +881,6 @@
     {
       "id": "SEL-072",
       "title": "INSERT VALUES内のCASE",
-      "review_status": "暫定確定（ユーザーレビュー未実施）",
       "sql_lines": [
         "insert ",
         "into users(status) ",

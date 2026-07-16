@@ -1314,7 +1314,7 @@ public sealed class OutputSheetPlanBuilderTests
     }
 
     /// <summary>
-    /// INSERT VALUESのCASEを移送元と分岐へ展開することを確認
+    /// INSERT VALUESの列値を返さないCASEを移送方法へ置き、同一項目を1つの枠にすることを確認
     /// </summary>
     [TestMethod]
     public void Build_ExpandsCaseInsideInsertValues()
@@ -1329,10 +1329,15 @@ public sealed class OutputSheetPlanBuilderTests
         Assert.IsFalse(plan.IsFallback);
         Assert.AreEqual(5, plan.RowCount);
         Assert.AreEqual("状態", CellValue(plan, 4, 1));
-        Assert.AreEqual("CASE結果", CellValue(plan, 4, 19));
-        Assert.AreEqual("※", CellValue(plan, 4, 35));
-        Assert.AreEqual("@active = 1 → 'ACTIVE'", CellValue(plan, 4, 37));
-        Assert.AreEqual("ELSE → 'INACTIVE'", CellValue(plan, 5, 37));
+        Assert.IsNull(CellValue(plan, 4, 19));
+        Assert.AreEqual("CASE結果", CellValue(plan, 4, 37));
+        Assert.AreEqual("※", CellValue(plan, 4, 51));
+        Assert.AreEqual("@active = 1 → 'ACTIVE'", CellValue(plan, 4, 52));
+        Assert.AreEqual("ELSE → 'INACTIVE'", CellValue(plan, 5, 52));
+        Assert.HasCount(3, plan.Sections);
+        Assert.AreEqual(OutputSectionKind.TransferGroup, plan.Sections[2].Kind);
+        Assert.AreEqual(4, plan.Sections[2].StartRow);
+        Assert.AreEqual(5, plan.Sections[2].EndRow);
     }
 
     /// <summary>

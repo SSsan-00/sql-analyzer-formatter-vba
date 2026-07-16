@@ -353,7 +353,7 @@ public static class OutputSheetPlanBuilder
         var transfers = new List<TransferItem>(values.Count);
         for (var index = 0; index < values.Count; index++)
         {
-            transfers.Add(CreateTransferItem(
+            transfers.Add(CreateInsertValuesTransferItem(
                 FragmentText(sql, specification.Columns[index]),
                 FragmentText(sql, values[index]),
                 values[index]));
@@ -2414,6 +2414,28 @@ public static class OutputSheetPlanBuilder
         return visitor.Found
             ? new TransferItem(target, expressionText, string.Empty, expression)
             : new TransferItem(target, string.Empty, expressionText, expression);
+    }
+
+    /// <summary>
+    /// INSERT VALUESのCASEが列値を返さない場合はCASE全体を移送方法へ配置
+    /// </summary>
+    private static TransferItem CreateInsertValuesTransferItem(
+        string target,
+        string expressionText,
+        ScalarExpression expression)
+    {
+        if (expression is SearchedCaseExpression or SimpleCaseExpression &&
+            !CaseResultsReferenceColumns(expression))
+        {
+            return new TransferItem(
+                target,
+                string.Empty,
+                expressionText,
+                expression,
+                RenderCaseInMethod: true);
+        }
+
+        return CreateTransferItem(target, expressionText, expression);
     }
 
     /// <summary>
