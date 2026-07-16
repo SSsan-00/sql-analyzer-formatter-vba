@@ -126,9 +126,15 @@ Public Sub SetupWorkbook_CreatesOutputSheet()
 
     AssertWorksheetExists OutputSheetName()
     Set wsOutput = ThisWorkbook.Worksheets(OutputSheetName())
+    wsOutput.Cells(200, 17).WrapText = True
+    wsOutput.Cells(200, 17).ShrinkToFit = True
+
+    ' 値のない過去セルに残った文字配置も初期化されることを確認
+    SetupWorkbook
     AssertOutputCopyButton wsOutput
     AssertOutputSheetGridlinesHidden
     AssertOutputSheetFont
+    AssertOutputTextFittingDisabled wsOutput
 End Sub
 
 '@TestMethod("CopyOutput")
@@ -300,6 +306,8 @@ Public Sub ClearData_ClearsOutputSheet()
     wsOutput.Cells(3, 2).Value = "output detail"
     wsOutput.Cells(4, 90).Value = "last column output"
     wsOutput.Cells(5, 1).Formula = "=""formula output"""
+    wsOutput.Cells(200, 17).WrapText = True
+    wsOutput.Cells(200, 17).ShrinkToFit = True
 
     ' クリア前のアウトプット表示位置とアクティブシートを再現
     wsOutput.Activate
@@ -316,6 +324,7 @@ Public Sub ClearData_ClearsOutputSheet()
     AssertCellValue wsOutput.Cells(4, 90), ""
     AssertCellValue wsOutput.Cells(5, 1), ""
     AssertOutputSheetFont
+    AssertOutputTextFittingDisabled wsOutput
     If Not ActiveSheet Is activeSheetBeforeClear Then
         Fail "Active sheet changed while clearing output."
     End If
@@ -1304,6 +1313,22 @@ Private Sub AssertOutputSheetFont()
 
     AssertCellFont wsOutput.Cells(1, 1), OutputFontName(), 9
     AssertCellFont wsOutput.Cells(20, 5), OutputFontName(), 9
+End Sub
+
+' アウトプット範囲で折り返しと縮小表示が無効なことを検証
+Private Sub AssertOutputTextFittingDisabled(ByVal wsOutput As Worksheet)
+    If CBool(wsOutput.Cells(3, 17).WrapText) Then
+        Fail "Output wrap text should be disabled."
+    End If
+    If CBool(wsOutput.Cells(3, 17).ShrinkToFit) Then
+        Fail "Output shrink to fit should be disabled."
+    End If
+    If CBool(wsOutput.Cells(200, 17).WrapText) Then
+        Fail "Unused output cells should not retain wrap text."
+    End If
+    If CBool(wsOutput.Cells(200, 17).ShrinkToFit) Then
+        Fail "Unused output cells should not retain shrink to fit."
+    End If
 End Sub
 
 ' アウトプットシートの選択セルとスクロール位置がA1へ戻ることを検証

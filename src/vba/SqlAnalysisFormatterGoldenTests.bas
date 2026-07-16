@@ -71,7 +71,7 @@ CompareError:
     CompareOutputGoldenFormat = caseId & " format comparison error: " & Err.Description
 End Function
 
-' セルの塗り、フォント、折り返し、四辺の罫線を比較
+' セルの塗り、フォント、文字配置、四辺の罫線を比較
 Private Function CompareGoldenCellFormat( _
     ByVal caseId As String, _
     ByVal expectedCell As Range, _
@@ -94,6 +94,9 @@ Private Function CompareGoldenCellFormat( _
     If Len(mismatch) > 0 Then GoTo MismatchFound
 
     mismatch = CompareGoldenEqual(caseId, address & " wrap", expectedCell.WrapText, actualCell.WrapText)
+    If Len(mismatch) > 0 Then GoTo MismatchFound
+
+    mismatch = CompareGoldenEqual(caseId, address & " shrink", expectedCell.ShrinkToFit, actualCell.ShrinkToFit)
     If Len(mismatch) > 0 Then GoTo MismatchFound
 
     For Each borderIndex In Array(7, 8, 9, 10)

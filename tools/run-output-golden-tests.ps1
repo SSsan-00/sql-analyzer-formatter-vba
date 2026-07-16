@@ -181,6 +181,21 @@ try {
                 if ($comparatorSelfTest -notlike "*$($testCase.id) A1 wrap*") {
                     throw "Output format comparator did not detect the intentional mismatch."
                 }
+
+                $originalShrinkToFit = $outputSheet.Cells.Item(1, 1).ShrinkToFit
+                $outputSheet.Cells.Item(1, 1).ShrinkToFit = -not [bool]$originalShrinkToFit
+                $shrinkComparatorSelfTest = [string]$excel.Run(
+                    "'$tempWorkbookPath'!CompareOutputGoldenFormat",
+                    [string]$testCase.id,
+                    $expectationBookName,
+                    [string]$testCase.id,
+                    $outputSheetName,
+                    [int]$expectedRowCount,
+                    $false)
+                $outputSheet.Cells.Item(1, 1).ShrinkToFit = $originalShrinkToFit
+                if ($shrinkComparatorSelfTest -notlike "*$($testCase.id) A1 shrink*") {
+                    throw "Output format comparator did not detect the intentional shrink mismatch."
+                }
             }
         }
         $phaseMilliseconds.Formats += $phaseTimer.Elapsed.TotalMilliseconds

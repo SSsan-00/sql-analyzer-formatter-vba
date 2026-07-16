@@ -535,14 +535,19 @@ Private Sub ApplyOutputSheetFont(ByVal ws As Worksheet, Optional ByVal lastRow A
     End With
 End Sub
 
-' アウトプットシートの列幅、行高、折り返しを設定
+' アウトプットシートの列幅、行高、文字配置を設定
 Private Sub ApplyOutputSheetDimensions(ByVal ws As Worksheet, ByVal lastRow As Long)
     Dim layoutLastRow As Long
+    Dim outputColumns As Range
 
     layoutLastRow = MaxLong(lastRow, 1)
-    ws.Range(ws.Columns(1), ws.Columns(OUTPUT_LAST_COLUMN)).ColumnWidth = OUTPUT_COLUMN_WIDTH
+    Set outputColumns = ws.Range(ws.Columns(1), ws.Columns(OUTPUT_LAST_COLUMN))
+    With outputColumns
+        .ColumnWidth = OUTPUT_COLUMN_WIDTH
+        .WrapText = False
+        .ShrinkToFit = False
+    End With
     ws.Range(ws.Rows(1), ws.Rows(layoutLastRow)).RowHeight = OUTPUT_ROW_HEIGHT
-    ws.Range(ws.Cells(1, 1), ws.Cells(layoutLastRow, OUTPUT_LAST_COLUMN)).WrapText = False
 End Sub
 
 ' アウトプットシートの表示設定を適用
