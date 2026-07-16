@@ -13,6 +13,7 @@ public enum OutputSectionKind
     Reference,
     Standard,
     Transfer,
+    TransferGroup,
     Separator
 }
 

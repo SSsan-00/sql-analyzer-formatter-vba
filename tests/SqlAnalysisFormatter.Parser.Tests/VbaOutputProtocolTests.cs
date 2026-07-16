@@ -21,7 +21,8 @@ public sealed class VbaOutputProtocolTests
             ],
             [
                 new OutputSection(OutputSectionKind.Reference, 2, 2),
-                new OutputSection(OutputSectionKind.Standard, 3, 4)
+                new OutputSection(OutputSectionKind.Standard, 3, 4),
+                new OutputSection(OutputSectionKind.TransferGroup, 5, 7)
             ],
             4,
             false);
@@ -34,7 +35,8 @@ public sealed class VbaOutputProtocolTests
             "C\t1\t1\t見出し",
             "C\t3\t17\tline1\\r\\nline2\\\\value\\tend",
             "S\tREFERENCE\t2\t2",
-            "S\tSTANDARD\t3\t4");
+            "S\tSTANDARD\t3\t4",
+            "S\tTRANSFER_GROUP\t5\t7");
         Assert.AreEqual(expected, text);
     }
 

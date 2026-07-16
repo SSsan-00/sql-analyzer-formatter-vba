@@ -364,7 +364,6 @@
     },
     {
       "id": "SEL-071",
-      "review_status": "暫定確定（ユーザーレビュー未実施）",
       "sql_lines": ["update tb1 ", "set", "    状態 = case ", "        when tb1.削除日時 is null ", "        and tb1.有効区分 = 1 ", "            then 'ACTIVE' ", "        else 'INACTIVE' ", "        end ", "from", "    users as tb1"],
       "tables": { "tb1": "ユーザー" }
     },

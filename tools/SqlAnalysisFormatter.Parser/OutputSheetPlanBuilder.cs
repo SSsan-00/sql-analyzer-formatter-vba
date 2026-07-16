@@ -465,25 +465,45 @@ public static class OutputSheetPlanBuilder
         if (transfers.Count > 0)
         {
             var startRow = row;
+            var transferGroups = new List<OutputSection>();
             cells.Add(new OutputCell(row, 1, "項目"));
             cells.Add(new OutputCell(row, 19, "移送元"));
             cells.Add(new OutputCell(row, 37, "移送方法ほか"));
             row++;
             foreach (var transfer in transfers)
             {
+                var itemStartRow = row;
                 cells.Add(new OutputCell(row, 1, transfer.Target));
                 if (transfer.Expression is not null &&
                     DirectCaseExpressions(transfer.Expression).Count > 0)
                 {
-                    row += WriteScalarExpression(
-                        cells,
-                        sql,
-                        transfer.Expression,
-                        row,
-                        displayName: null,
-                        valueColumn: 19,
-                        markerColumn: 35,
-                        detailColumn: 37);
+                    var consumedRows = transfer.RenderCaseInMethod
+                        ? WriteScalarExpression(
+                            cells,
+                            sql,
+                            transfer.Expression,
+                            row,
+                            displayName: null,
+                            valueColumn: 37,
+                            markerColumn: 51,
+                            detailColumn: 52)
+                        : WriteScalarExpression(
+                            cells,
+                            sql,
+                            transfer.Expression,
+                            row,
+                            displayName: null,
+                            valueColumn: 19,
+                            markerColumn: 35,
+                            detailColumn: 37);
+                    row += consumedRows;
+                    if (transfer.RenderCaseInMethod && consumedRows > 1)
+                    {
+                        transferGroups.Add(new OutputSection(
+                            OutputSectionKind.TransferGroup,
+                            itemStartRow,
+                            row - 1));
+                    }
                     continue;
                 }
 
@@ -498,6 +518,7 @@ public static class OutputSheetPlanBuilder
                 row++;
             }
             sections.Add(new OutputSection(OutputSectionKind.Transfer, startRow, row - 1));
+            sections.AddRange(transferGroups);
         }
 
         WriteJoinSection(cells, sections, sql, fromClause, mappings, ref row);
@@ -2379,10 +2400,53 @@ public static class OutputSheetPlanBuilder
             }
         }
 
+        if (clause.NewValue is SearchedCaseExpression or SimpleCaseExpression &&
+            !CaseResultsReferenceColumns(clause.NewValue))
+        {
+            return new TransferItem(
+                target,
+                string.Empty,
+                FragmentText(sql, clause.NewValue),
+                clause.NewValue,
+                RenderCaseInMethod: true);
+        }
+
         return CreateTransferItem(
             target,
             FragmentText(sql, clause.NewValue),
             clause.NewValue);
+    }
+
+    /// <summary>
+    /// CASEの条件式ではなく、THENとELSEが返す値に列参照があるか判定
+    /// </summary>
+    private static bool CaseResultsReferenceColumns(ScalarExpression expression)
+    {
+        return expression switch
+        {
+            SearchedCaseExpression searchedCase =>
+                searchedCase.WhenClauses.Any(clause => ValueReferencesColumn(clause.ThenExpression)) ||
+                searchedCase.ElseExpression is not null && ValueReferencesColumn(searchedCase.ElseExpression),
+            SimpleCaseExpression simpleCase =>
+                simpleCase.WhenClauses.Any(clause => ValueReferencesColumn(clause.ThenExpression)) ||
+                simpleCase.ElseExpression is not null && ValueReferencesColumn(simpleCase.ElseExpression),
+            _ => false
+        };
+    }
+
+    /// <summary>
+    /// CASEを返す値は条件を除外して再帰し、それ以外は式全体の列参照を確認
+    /// </summary>
+    private static bool ValueReferencesColumn(ScalarExpression expression)
+    {
+        if (expression is SearchedCaseExpression or SimpleCaseExpression)
+        {
+            return CaseResultsReferenceColumns(expression);
+        }
+
+        var visitor = new ColumnReferenceVisitor();
+        expression.Accept(visitor);
+        return visitor.Found;
     }
 
     /// <summary>
@@ -2668,7 +2732,8 @@ public static class OutputSheetPlanBuilder
         string Target,
         string Source,
         string Method,
-        ScalarExpression? Expression = null);
+        ScalarExpression? Expression = null,
+        bool RenderCaseInMethod = false);
 
     private sealed record ConditionPart(string Connector, BooleanExpression Expression);
 

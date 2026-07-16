@@ -1627,7 +1627,7 @@ public sealed class OutputSheetPlanBuilderTests
     }
 
     /// <summary>
-    /// UPDATE SETのCASEと複合WHEN条件を移送表の複数行へ展開することを確認
+    /// UPDATE SETのCASEを移送方法へ置き、複合WHEN条件を同一項目の複数行へ展開することを確認
     /// </summary>
     [TestMethod]
     public void Build_ExpandsCaseInsideUpdateSet()
@@ -1648,12 +1648,45 @@ public sealed class OutputSheetPlanBuilderTests
         Assert.IsFalse(plan.IsFallback);
         Assert.AreEqual(6, plan.RowCount);
         Assert.AreEqual("状態", CellValue(plan, 4, 1));
+        Assert.IsNull(CellValue(plan, 4, 19));
+        Assert.AreEqual("CASE結果", CellValue(plan, 4, 37));
+        Assert.AreEqual("※", CellValue(plan, 4, 51));
+        Assert.AreEqual("tb1.削除日時 IS NULL", CellValue(plan, 4, 54));
+        Assert.AreEqual("AND", CellValue(plan, 5, 52));
+        Assert.AreEqual("tb1.有効区分 = 1 → 'ACTIVE'", CellValue(plan, 5, 54));
+        Assert.AreEqual("それ以外 → 'INACTIVE'", CellValue(plan, 6, 52));
+        Assert.HasCount(3, plan.Sections);
+        Assert.AreEqual("TransferGroup", plan.Sections[2].Kind.ToString());
+        Assert.AreEqual(4, plan.Sections[2].StartRow);
+        Assert.AreEqual(6, plan.Sections[2].EndRow);
+    }
+
+    /// <summary>
+    /// UPDATE SETのCASEが列値を返す場合は引き続き移送元へ出力することを確認
+    /// </summary>
+    [TestMethod]
+    public void Build_WritesColumnReturningUpdateCaseAsTransferSource()
+    {
+        const string sql = """
+            UPDATE tb1
+            SET
+                氏名 = CASE
+                    WHEN tb2.氏名 IS NULL THEN tb1.氏名
+                    ELSE tb2.氏名
+                END
+            FROM
+                users AS tb1
+                INNER JOIN import_users AS tb2
+                    ON tb1.ユーザーID = tb2.ユーザーID
+            """;
+
+        var plan = OutputSheetPlanBuilder.Build(sql, []);
+
+        Assert.IsFalse(plan.IsFallback);
         Assert.AreEqual("CASE結果", CellValue(plan, 4, 19));
-        Assert.AreEqual("※", CellValue(plan, 4, 35));
-        Assert.AreEqual("tb1.削除日時 IS NULL", CellValue(plan, 4, 39));
-        Assert.AreEqual("AND", CellValue(plan, 5, 37));
-        Assert.AreEqual("tb1.有効区分 = 1 → 'ACTIVE'", CellValue(plan, 5, 39));
-        Assert.AreEqual("それ以外 → 'INACTIVE'", CellValue(plan, 6, 37));
+        Assert.AreEqual("tb2.氏名 IS NULL → tb1.氏名", CellValue(plan, 4, 37));
+        Assert.AreEqual("それ以外 → tb2.氏名", CellValue(plan, 5, 37));
+        Assert.IsFalse(plan.Sections.Any(section => section.Kind == OutputSectionKind.TransferGroup));
     }
 
     /// <summary>

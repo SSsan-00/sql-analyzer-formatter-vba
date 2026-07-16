@@ -27,8 +27,20 @@ public static class VbaOutputProtocol
             .ThenBy(cell => cell.Column)
             .Select(cell => $"C\t{cell.Row}\t{cell.Column}\t{Escape(cell.Value)}"));
         lines.AddRange(plan.Sections.Select(section =>
-            $"S\t{section.Kind.ToString().ToUpperInvariant()}\t{section.StartRow}\t{section.EndRow}"));
+            $"S\t{SectionKindText(section.Kind)}\t{section.StartRow}\t{section.EndRow}"));
         return string.Join("\r\n", lines);
+    }
+
+    /// <summary>
+    /// VBA側で読みやすいセクション名へ変換
+    /// </summary>
+    private static string SectionKindText(OutputSectionKind kind)
+    {
+        return kind switch
+        {
+            OutputSectionKind.TransferGroup => "TRANSFER_GROUP",
+            _ => kind.ToString().ToUpperInvariant()
+        };
     }
 
     /// <summary>

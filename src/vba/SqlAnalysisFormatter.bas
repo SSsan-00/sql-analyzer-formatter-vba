@@ -940,11 +940,37 @@ Private Sub ApplyOutputSectionStyle( _
             ApplyFilledFrame ws.Range(ws.Cells(startRow, 7), ws.Cells(endRow, OUTPUT_LAST_COLUMN)), vbWhite
         Case "TRANSFER"
             ApplyTransferSectionStyle ws, startRow, endRow
+        Case "TRANSFER_GROUP"
+            ApplyTransferGroupStyle ws, startRow, endRow
         Case "SEPARATOR"
             ApplySeparatorBorder ws.Range(ws.Cells(startRow, 1), ws.Cells(endRow, OUTPUT_LAST_COLUMN))
         Case Else
             Err.Raise vbObjectError + 520, "ApplyOutputSectionStyle", "Unknown section kind: " & sectionKind
     End Select
+End Sub
+
+' データ移送表の同一項目に属する複数行を1つの枠へまとめる
+Private Sub ApplyTransferGroupStyle(ByVal ws As Worksheet, ByVal startRow As Long, ByVal endRow As Long)
+    Dim leftRange As Range
+    Dim middleRange As Range
+    Dim rightRange As Range
+
+    Set leftRange = ws.Range(ws.Cells(startRow, 1), ws.Cells(endRow, 18))
+    Set middleRange = ws.Range(ws.Cells(startRow, 19), ws.Cells(endRow, 36))
+    Set rightRange = ws.Range(ws.Cells(startRow, 37), ws.Cells(endRow, OUTPUT_LAST_COLUMN))
+
+    ClearInsideHorizontalBorder leftRange
+    ClearInsideHorizontalBorder middleRange
+    ClearInsideHorizontalBorder rightRange
+    ApplyOuterBorder leftRange
+    ApplyOuterBorder middleRange
+    ApplyOuterBorder rightRange
+End Sub
+
+' 指定範囲の行間罫線を解除
+Private Sub ClearInsideHorizontalBorder(ByVal targetRange As Range)
+    If targetRange.Rows.Count <= 1 Then Exit Sub
+    targetRange.Borders(xlInsideHorizontal).LineStyle = xlNone
 End Sub
 
 ' データ移送表の3列フレームと見出し色を設定
