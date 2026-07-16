@@ -1,7 +1,7 @@
 # 暫定実装ケース
 
 この資料は、ユーザーレビュー前の推測期待値で実装したケースを管理する。
-2026-07-17時点で、次の5ケースは回帰テストへ登録済みだが、最終レビューは未実施となる。
+2026-07-17時点で、次の4ケースは回帰テストへ登録済みだが、最終レビューは未実施となる。
 
 ## 共通ルール
 
@@ -14,7 +14,6 @@
 
 | ケース | SQL概要 | 暫定期待値 |
 | --- | --- | --- |
-| SEL-060 | 単一行のINSERT VALUES | 変数、定数、関数を`移送方法ほか`へ記載したデータ移送表を出力 |
 | SEL-068 | SUMの引数にあるCASE | 外側を`SUM(CASE結果)`と表示し、CASE分岐を右側へ複数行で出力する |
 | SEL-073 | TOP内のCASE | `取得件数`を`CASE結果`として分岐を右側へ出力する |
 | SEL-074 | OFFSET内のCASE | `取得範囲`のCASEを結果参照へ置換し、分岐を右側へ出力する |
@@ -33,7 +32,7 @@ SQLはA5:SQL Mk-2 2.21.2の`Ctrl+Q`で実整形し、`tests/ManualOutputCases.js
 次のコマンドで対象ケースの元SQLと和名定義を開発用ブックへ投入する。
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File tools/Set-ManualOutputCase.ps1 -CaseId SEL-060
+powershell -ExecutionPolicy Bypass -File tools/Set-ManualOutputCase.ps1 -CaseId SEL-068
 ```
 
 `解析`を実行し、`アウトプット`シートを確認する。暫定期待値と異なる場合は、従来どおりシートへ正しい期待値を記入する。

@@ -560,7 +560,6 @@
     {
       "id": "SEL-060",
       "title": "INSERT VALUES",
-      "review_status": "暫定確定（ユーザーレビュー未実施）",
       "sql_lines": [
         "insert ",
         "into users(user_id, name, status, created_at) ",

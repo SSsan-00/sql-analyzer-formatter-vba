@@ -297,7 +297,6 @@
     },
     {
       "id": "SEL-060",
-      "review_status": "暫定確定（ユーザーレビュー未実施）",
       "sql_lines": ["insert ", "into users(ユーザーID, 氏名, 状態, 作成日時) ", "values (@user_id, @name, 'ACTIVE', sysdatetime())"],
       "tables": { "users": "ユーザー" }
     },
