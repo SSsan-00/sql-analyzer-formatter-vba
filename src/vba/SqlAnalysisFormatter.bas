@@ -811,8 +811,9 @@ Private Function ApplyOutputPlan(ByVal ws As Worksheet, ByVal planText As String
                     rowNumber = CLng(fields(1))
                     columnNumber = CLng(fields(2))
                     If rowNumber < 1 Or columnNumber < 1 Or columnNumber > OUTPUT_LAST_COLUMN Then GoTo InvalidPlan
-                    ws.Cells(rowNumber, columnNumber).NumberFormat = "@"
-                    ws.Cells(rowNumber, columnNumber).Value = UnescapeProtocolField(CStr(fields(3)))
+                    SetOutputCellText _
+                        ws.Cells(rowNumber, columnNumber), _
+                        UnescapeProtocolField(CStr(fields(3)))
                 Case "S"
                     If Not IsNumeric(fields(2)) Or Not IsNumeric(fields(3)) Then GoTo InvalidPlan
                     startRow = CLng(fields(2))
@@ -833,6 +834,15 @@ Private Function ApplyOutputPlan(ByVal ws As Worksheet, ByVal planText As String
 InvalidPlan:
     ApplyOutputPlan = False
 End Function
+
+' 先頭アポストロフィをExcelの文字列プレフィックスとして消費させず書き込む
+Private Sub SetOutputCellText(ByVal targetCell As Range, ByVal cellValue As String)
+    targetCell.NumberFormat = "@"
+    If Left$(cellValue, 1) = "'" Then
+        cellValue = "'" & cellValue
+    End If
+    targetCell.Value = cellValue
+End Sub
 
 ' セクション種別に応じて塗りと外枠を設定
 Private Sub ApplyOutputSectionStyle( _

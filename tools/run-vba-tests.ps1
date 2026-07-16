@@ -1,5 +1,6 @@
 param(
-    [string]$ParserExePath = ''
+    [string]$ParserExePath = '',
+    [string[]]$TestName = @()
 )
 
 $ErrorActionPreference = 'Stop'
@@ -64,9 +65,16 @@ try {
         'AnalyzeQueries_ConvertsCrudFixtures',
         'AnalyzeQueries_ConvertsTsqlFunctionFixtures',
         'AnalyzeQueries_WritesWithSubqueriesInsideOut',
+        'AnalyzeQueries_PreservesLeadingApostropheInOutput',
         'AnalyzeQueries_WritesUnsupportedQueryAsIs',
         'ClearData_ClearsOutputSheet'
     )
+    if ($TestName.Count -gt 0) {
+        $testMacros = @($testMacros | Where-Object { $_ -in $TestName })
+        if ($testMacros.Count -eq 0) {
+            throw "VBA test not found: $($TestName -join ', ')"
+        }
+    }
     for ($testIndex = 0; $testIndex -lt $testMacros.Count; $testIndex++) {
         $macroName = $testMacros[$testIndex]
         $excel.Run("'$tempWorkbookPath'!$macroName") | Out-Null

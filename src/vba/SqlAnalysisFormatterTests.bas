@@ -18,6 +18,7 @@ Public Sub RunAllSqlAnalysisFormatterTests(Optional ByVal showMessage As Boolean
     AnalyzeQueries_ConvertsCrudFixtures
     AnalyzeQueries_ConvertsTsqlFunctionFixtures
     AnalyzeQueries_WritesWithSubqueriesInsideOut
+    AnalyzeQueries_PreservesLeadingApostropheInOutput
     AnalyzeQueries_WritesUnsupportedQueryAsIs
     ClearData_ClearsOutputSheet
 
@@ -166,6 +167,33 @@ Public Sub AnalyzeQueries_WritesWithSubqueriesInsideOut()
     Else
         AssertFallbackLines wsOutput, CStr(wsSql.Cells(2, COL_RESULT).Value), ExpectedParserNotFoundReason()
     End If
+End Sub
+
+'@TestMethod("AnalyzeQueries")
+Public Sub AnalyzeQueries_PreservesLeadingApostropheInOutput()
+    Dim wsRef As Worksheet
+    Dim wsSql As Worksheet
+    Dim wsOutput As Worksheet
+
+    If Not ExternalParserConfigured() Then Exit Sub
+
+    SetupWorkbook
+    Set wsRef = ThisWorkbook.Worksheets(ReferenceSheetName())
+    Set wsSql = ThisWorkbook.Worksheets(SqlSheetName())
+    Set wsOutput = ThisWorkbook.Worksheets(OutputSheetName())
+
+    wsRef.Range("A2:D200").ClearContents
+    wsSql.Range("A2:Z200").ClearContents
+    wsOutput.Cells.ClearContents
+    PutDefinition wsRef, 2, "-", "", "source_type", StatusText()
+    wsSql.Cells(2, COL_SQL).Value = _
+        "insert into user_summary(source_type)" & vbLf & _
+        "select" & vbLf & _
+        "    'BATCH'"
+
+    AnalyzeQueries False
+
+    AssertCellValue wsOutput.Cells(4, 37), "'BATCH'"
 End Sub
 
 '@TestMethod("AnalyzeQueries")
