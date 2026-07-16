@@ -8,7 +8,8 @@ namespace SqlAnalysisFormatter.Parser;
 public static class VbaOutputProtocol
 {
     private const string PlanHeader = "SAF_OUTPUT_PLAN\t1";
-    private const string MappingHeader = "SAF_MAPPINGS\t1";
+    private const string MappingHeaderV1 = "SAF_MAPPINGS\t1";
+    private const string MappingHeaderV2 = "SAF_MAPPINGS\t2";
 
     /// <summary>
     /// 描画計画をタブ区切り行へ変換
@@ -41,16 +42,19 @@ public static class VbaOutputProtocol
             .Replace("\r\n", "\n", StringComparison.Ordinal)
             .Replace('\r', '\n')
             .Split('\n', StringSplitOptions.RemoveEmptyEntries);
-        if (lines.Length == 0 || lines[0] != MappingHeader)
+        if (lines.Length == 0 ||
+            (lines[0] != MappingHeaderV1 && lines[0] != MappingHeaderV2))
         {
             throw new InvalidDataException("変換定義ファイルのヘッダーが不正です。");
         }
 
+        var hasParserFieldId = lines[0] == MappingHeaderV2;
+        var expectedFieldCount = hasParserFieldId ? 6 : 5;
         var mappings = new List<MappingDefinition>();
         for (var index = 1; index < lines.Length; index++)
         {
             var fields = lines[index].Split('\t');
-            if (fields.Length != 5 || fields[0] != "M")
+            if (fields.Length != expectedFieldCount || fields[0] != "M")
             {
                 throw new InvalidDataException($"変換定義ファイルの{index + 1}行目が不正です。");
             }
@@ -59,7 +63,8 @@ public static class VbaOutputProtocol
                 Unescape(fields[1]),
                 Unescape(fields[2]),
                 Unescape(fields[3]),
-                Unescape(fields[4])));
+                Unescape(fields[4]),
+                hasParserFieldId ? Unescape(fields[5]) : string.Empty));
         }
 
         return mappings;

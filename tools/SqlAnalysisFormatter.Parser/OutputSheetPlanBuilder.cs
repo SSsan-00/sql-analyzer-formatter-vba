@@ -18,6 +18,15 @@ public static class OutputSheetPlanBuilder
         ArgumentNullException.ThrowIfNull(sql);
         ArgumentNullException.ThrowIfNull(mappings);
 
+        var plan = BuildCore(sql, mappings);
+        return ParserFieldIdentifierRestorer.Restore(plan, mappings);
+    }
+
+    /// <summary>
+    /// SQLを解析して復元前の描画計画を作成
+    /// </summary>
+    private static OutputSheetPlan BuildCore(string sql, IReadOnlyList<MappingDefinition> mappings)
+    {
         var parser = new TSql160Parser(initialQuotedIdentifiers: false);
         using var reader = new StringReader(sql);
         var fragment = parser.Parse(reader, out var errors);
@@ -1489,8 +1498,15 @@ public static class OutputSheetPlanBuilder
         IReadOnlyList<MappingDefinition> mappings,
         IEnumerable<string> additionalTables)
     {
+        var allowStandaloneTableName = fromClause?.TableReferences
+            .SelectMany(EnumerateNamedTables)
+            .Take(2)
+            .Count() == 1;
         return (fromClause?.TableReferences
-            .SelectMany(table => EnumerateTableDisplays(table, mappings))
+            .SelectMany(table => EnumerateTableDisplays(
+                table,
+                mappings,
+                allowStandaloneTableName))
             ?? [])
             .Concat(additionalTables)
             .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -1502,19 +1518,26 @@ public static class OutputSheetPlanBuilder
     /// </summary>
     private static IEnumerable<string> EnumerateTableDisplays(
         TableReference table,
-        IReadOnlyList<MappingDefinition> mappings)
+        IReadOnlyList<MappingDefinition> mappings,
+        bool allowStandaloneTableName)
     {
         switch (table)
         {
             case NamedTableReference named:
-                yield return BuildTableDisplay(named, mappings);
+                yield return BuildTableDisplay(named, mappings, allowStandaloneTableName);
                 break;
             case QualifiedJoin join:
-                foreach (var display in EnumerateTableDisplays(join.FirstTableReference, mappings))
+                foreach (var display in EnumerateTableDisplays(
+                    join.FirstTableReference,
+                    mappings,
+                    allowStandaloneTableName))
                 {
                     yield return display;
                 }
-                foreach (var display in EnumerateTableDisplays(join.SecondTableReference, mappings))
+                foreach (var display in EnumerateTableDisplays(
+                    join.SecondTableReference,
+                    mappings,
+                    allowStandaloneTableName))
                 {
                     yield return display;
                 }
@@ -1533,10 +1556,22 @@ public static class OutputSheetPlanBuilder
     /// </summary>
     private static string BuildTableDisplay(
         NamedTableReference table,
-        IReadOnlyList<MappingDefinition> mappings)
+        IReadOnlyList<MappingDefinition> mappings,
+        bool allowStandaloneTableName = false)
     {
         var tableId = table.Alias?.Value ?? table.SchemaObject.BaseIdentifier.Value;
         var tableName = ResolveTableName(table, mappings);
+        if (tableName == MissingName && allowStandaloneTableName)
+        {
+            var standaloneTableName = ResolveStandaloneTableName(mappings);
+            if (standaloneTableName is not null)
+            {
+                return table.Alias is null
+                    ? standaloneTableName
+                    : $"{standaloneTableName}[{tableId}]";
+            }
+        }
+
         return $"{tableName}[{tableId}]";
     }
 
@@ -1586,6 +1621,27 @@ public static class OutputSheetPlanBuilder
         }
 
         return tableName;
+    }
+
+    /// <summary>
+    /// 単独フィールド定義から一意なテーブル和名を解決
+    /// </summary>
+    private static string? ResolveStandaloneTableName(IReadOnlyList<MappingDefinition> mappings)
+    {
+        var tableNames = mappings
+            .Where(mapping => string.Equals(
+                mapping.TableId.Trim(),
+                "-",
+                StringComparison.Ordinal))
+            .Select(mapping => mapping.TableName.Trim())
+            .Where(tableName =>
+                tableName.Length > 0 &&
+                tableName != "-" &&
+                !tableName.Contains(MissingName, StringComparison.Ordinal))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(2)
+            .ToArray();
+        return tableNames.Length == 1 ? tableNames[0] : null;
     }
 
     /// <summary>
@@ -2223,4 +2279,5 @@ public sealed record MappingDefinition(
     string TableId,
     string TableName,
     string FieldId,
-    string FieldName);
+    string FieldName,
+    string ParserFieldId = "");

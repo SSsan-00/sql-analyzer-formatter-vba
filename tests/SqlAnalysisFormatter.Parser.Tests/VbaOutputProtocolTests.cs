@@ -46,18 +46,33 @@ public sealed class VbaOutputProtocolTests
     {
         var text = string.Join(
             "\r\n",
-            "SAF_MAPPINGS\t1",
-            "M\ttb1\tユーザー\tuser_id\tユーザーID",
-            "M\ttb\\t2\t注\\\\文\tname\t氏\\n名");
+            "SAF_MAPPINGS\t2",
+            "M\ttb1\tユーザー\tuser_id\tユーザーID\t__SAF_FIELD_R000002__",
+            "M\ttb\\t2\t注\\\\文\tname\t氏\\n名\t__SAF_FIELD_R000003__");
 
         var mappings = VbaOutputProtocol.ParseMappings(text);
 
         CollectionAssert.AreEqual(
             new[]
             {
-                new MappingDefinition("tb1", "ユーザー", "user_id", "ユーザーID"),
-                new MappingDefinition("tb\t2", "注\\文", "name", "氏\n名")
+                new MappingDefinition("tb1", "ユーザー", "user_id", "ユーザーID", "__SAF_FIELD_R000002__"),
+                new MappingDefinition("tb\t2", "注\\文", "name", "氏\n名", "__SAF_FIELD_R000003__")
             },
+            mappings.ToArray());
+    }
+
+    /// <summary>
+    /// 旧形式の変換定義も引き続き読み込めることを確認
+    /// </summary>
+    [TestMethod]
+    public void ParseMappings_AcceptsLegacyVersionOne()
+    {
+        const string text = "SAF_MAPPINGS\t1\r\nM\ttb1\tユーザー\tuser_id\tユーザーID";
+
+        var mappings = VbaOutputProtocol.ParseMappings(text);
+
+        CollectionAssert.AreEqual(
+            new[] { new MappingDefinition("tb1", "ユーザー", "user_id", "ユーザーID") },
             mappings.ToArray());
     }
 }

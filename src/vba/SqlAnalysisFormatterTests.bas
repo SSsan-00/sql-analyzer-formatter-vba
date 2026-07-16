@@ -19,6 +19,8 @@ Public Sub RunAllSqlAnalysisFormatterTests(Optional ByVal showMessage As Boolean
     AnalyzeQueries_ConvertsTsqlFunctionFixtures
     AnalyzeQueries_WritesWithSubqueriesInsideOut
     AnalyzeQueries_PreservesLeadingApostropheInOutput
+    AnalyzeQueries_HandlesSyntaxCharactersInFieldNames
+    AnalyzeQueries_UsesStandaloneTableNameForSingleTable
     AnalyzeQueries_WritesUnsupportedQueryAsIs
     ClearData_ClearsOutputSheet
 
@@ -32,6 +34,76 @@ TestFail:
         MsgBox Err.Description, vbCritical
     End If
     Err.Raise Err.Number, Err.Source, Err.Description
+End Sub
+
+'@TestMethod("AnalyzeQueries")
+' 単独フィールド定義のテーブル和名を単一参照テーブルへ使用することを確認
+Public Sub AnalyzeQueries_UsesStandaloneTableNameForSingleTable()
+    Dim wsRef As Worksheet
+    Dim wsSql As Worksheet
+    Dim wsOutput As Worksheet
+
+    If Not ExternalParserConfigured() Then Exit Sub
+
+    SetupWorkbook
+    Set wsRef = ThisWorkbook.Worksheets(ReferenceSheetName())
+    Set wsSql = ThisWorkbook.Worksheets(SqlSheetName())
+    Set wsOutput = ThisWorkbook.Worksheets(OutputSheetName())
+
+    wsRef.Range("A2:D200").ClearContents
+    wsSql.Range("A2:Z200").ClearContents
+    wsOutput.Cells.ClearContents
+    PutDefinition wsRef, 2, "-", UserTableText(), "name", FullNameText()
+    wsSql.Cells(2, COL_SQL).Value = "SELECT name FROM [user]"
+
+    AnalyzeQueries False
+
+    AssertCellValue wsSql.Cells(2, COL_RESULT), "SELECT " & FullNameText() & " FROM [user]"
+    AssertCellValue wsOutput.Cells(2, 1), ReferenceTablesText() & ": " & UserTableText()
+End Sub
+
+'@TestMethod("AnalyzeQueries")
+' 構文文字を含むフィールド和名でも表を出力できることを確認
+Public Sub AnalyzeQueries_HandlesSyntaxCharactersInFieldNames()
+    Dim wsRef As Worksheet
+    Dim wsSql As Worksheet
+    Dim wsOutput As Worksheet
+    Dim bracketSlashName As String
+    Dim operatorName As String
+    Dim quoteCommentName As String
+
+    If Not ExternalParserConfigured() Then Exit Sub
+
+    SetupWorkbook
+    Set wsRef = ThisWorkbook.Worksheets(ReferenceSheetName())
+    Set wsSql = ThisWorkbook.Worksheets(SqlSheetName())
+    Set wsOutput = ThisWorkbook.Worksheets(OutputSheetName())
+
+    wsRef.Range("A2:D200").ClearContents
+    wsSql.Range("A2:Z200").ClearContents
+    wsOutput.Cells.ClearContents
+    bracketSlashName = UserIdText() & "[" & AmountText() & "]/" & StatusText()
+    operatorName = "=1+1 / [" & StatusText() & "]"
+    quoteCommentName = FullNameText() & "'/*main*/--current"
+    PutDefinition wsRef, 2, "tb1", OrderTableText(), "amount", "  " & bracketSlashName & "  "
+    PutDefinition wsRef, 3, "-", "", "status", operatorName
+    PutDefinition wsRef, 4, "tb1", OrderTableText(), "owner", quoteCommentName
+    wsSql.Cells(2, COL_SQL).Value = _
+        "SELECT tb1.amount, status, tb1.owner FROM invoices AS tb1"
+
+    AnalyzeQueries False
+
+    AssertCellValue wsSql.Cells(2, COL_RESULT), _
+        "SELECT tb1." & bracketSlashName & ", " & operatorName & _
+        ", tb1." & quoteCommentName & " FROM invoices AS tb1"
+    AssertCellValue wsOutput.Cells(1, 1), SelectOutputTitle()
+    AssertCellValue wsOutput.Cells(3, 17), "tb1." & bracketSlashName
+    AssertCellValue wsOutput.Cells(4, 17), operatorName
+    AssertCellValue wsOutput.Cells(5, 17), "tb1." & quoteCommentName
+    AssertCellValue wsSql.Cells(2, COL_REPLACEMENT + 1), operatorName
+    If wsSql.Cells(2, COL_REPLACEMENT + 1).HasFormula Then
+        Fail "Syntax-like field name was written as an Excel formula."
+    End If
 End Sub
 
 ' 自動実行時の結果をダイアログなしで返す
@@ -1160,6 +1232,7 @@ End Function
 
 ' 変換定義のテストデータを1行設定
 Private Sub PutDefinition(ByVal ws As Worksheet, ByVal rowNumber As Long, ByVal tableId As String, ByVal tableName As String, ByVal fieldId As String, ByVal fieldName As String)
+    ws.Range(ws.Cells(rowNumber, 1), ws.Cells(rowNumber, 4)).NumberFormat = "@"
     ws.Cells(rowNumber, 1).Value = tableId
     ws.Cells(rowNumber, 2).Value = tableName
     ws.Cells(rowNumber, 3).Value = fieldId
@@ -1383,6 +1456,11 @@ End Function
 ' ユーザーテーブル和名を返す
 Private Function UserTableText() As String
     UserTableText = W(&H30E6, &H30FC, &H30B6, &H30FC)
+End Function
+
+' 参照テーブル見出しを返す
+Private Function ReferenceTablesText() As String
+    ReferenceTablesText = W(&H53C2, &H7167, &H30C6, &H30FC, &H30D6, &H30EB)
 End Function
 
 ' 注文テーブル和名を返す

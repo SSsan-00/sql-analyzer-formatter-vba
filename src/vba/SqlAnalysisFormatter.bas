@@ -41,6 +41,8 @@ Public Sub AnalyzeQueries(Optional ByVal showMessage As Boolean = True)
     Dim wsOutput As Worksheet
     Dim qualifiedMap As Object
     Dim standaloneMap As Object
+    Dim qualifiedParserMap As Object
+    Dim standaloneParserMap As Object
     Dim qualifiedKeys As Variant
     Dim standaloneKeys As Variant
     Dim lastRow As Long
@@ -48,6 +50,8 @@ Public Sub AnalyzeQueries(Optional ByVal showMessage As Boolean = True)
     Dim sourceText As String
     Dim convertedText As String
     Dim convertedQueryText As String
+    Dim parserText As String
+    Dim parserQueryText As String
     Dim fallbackReason As String
     Dim replacementValues As Object
 
@@ -56,8 +60,10 @@ Public Sub AnalyzeQueries(Optional ByVal showMessage As Boolean = True)
     Set wsOutput = GetOutputSheet()
     Set qualifiedMap = CreateTextDictionary()
     Set standaloneMap = CreateTextDictionary()
+    Set qualifiedParserMap = CreateTextDictionary()
+    Set standaloneParserMap = CreateTextDictionary()
 
-    LoadMappings wsRef, qualifiedMap, standaloneMap
+    LoadMappings wsRef, qualifiedMap, standaloneMap, qualifiedParserMap, standaloneParserMap
     If qualifiedMap.Count = 0 And standaloneMap.Count = 0 Then
         If showMessage Then
             MsgBox NoDefinitionMessage(), vbInformation
@@ -78,17 +84,24 @@ Public Sub AnalyzeQueries(Optional ByVal showMessage As Boolean = True)
         If Len(sourceText) > 0 Then
             Set replacementValues = CreateTextDictionary()
             convertedText = ApplyMappings(sourceText, qualifiedMap, qualifiedKeys, standaloneMap, standaloneKeys, replacementValues)
-            wsSql.Cells(rowNumber, COL_RESULT).Value = convertedText
+            parserText = ApplyMappings( _
+                sourceText, qualifiedParserMap, qualifiedKeys, _
+                standaloneParserMap, standaloneKeys, Nothing, False)
+            SetOutputCellText wsSql.Cells(rowNumber, COL_RESULT), convertedText
             WriteReplacementValues wsSql, rowNumber, replacementValues
             If Len(convertedQueryText) > 0 Then
                 convertedQueryText = convertedQueryText & vbCrLf
             End If
             convertedQueryText = convertedQueryText & convertedText
+            If Len(parserQueryText) > 0 Then
+                parserQueryText = parserQueryText & vbCrLf
+            End If
+            parserQueryText = parserQueryText & parserText
         End If
     Next rowNumber
 
     If Len(convertedQueryText) > 0 Then
-        If Not TryWriteExternalOutputPlan(wsOutput, wsRef, convertedQueryText, fallbackReason) Then
+        If Not TryWriteExternalOutputPlan(wsOutput, wsRef, parserQueryText, fallbackReason) Then
             WriteFallbackOutput wsOutput, convertedQueryText, fallbackReason
         End If
     End If
@@ -127,13 +140,20 @@ Public Sub ClearData(Optional ByVal showMessage As Boolean = True)
     RestoreFindSearchOrderByRows wsSql
 End Sub
 
-' 変換定義シートから修飾付きIDと単独IDの変換表を作成
-Private Sub LoadMappings(ByVal wsRef As Worksheet, ByVal qualifiedMap As Object, ByVal standaloneMap As Object)
+' 変換定義シートから表示用とparser用の変換表を作成
+Private Sub LoadMappings( _
+    ByVal wsRef As Worksheet, _
+    ByVal qualifiedMap As Object, _
+    ByVal standaloneMap As Object, _
+    ByVal qualifiedParserMap As Object, _
+    ByVal standaloneParserMap As Object)
+
     Dim lastRow As Long
     Dim rowNumber As Long
     Dim tableId As String
     Dim fieldId As String
     Dim fieldName As String
+    Dim parserFieldId As String
 
     lastRow = LastUsedRow(wsRef)
     For rowNumber = 2 To lastRow
@@ -142,40 +162,47 @@ Private Sub LoadMappings(ByVal wsRef As Worksheet, ByVal qualifiedMap As Object,
         fieldName = NormalizeName(wsRef.Cells(rowNumber, COL_FIELD_NAME).Value)
 
         If Len(fieldId) > 0 And IsUsableJapaneseName(fieldName) Then
+            parserFieldId = ParserFieldIdentifier(rowNumber)
             If tableId = "-" Then
                 standaloneMap(fieldId) = fieldName
+                standaloneParserMap(fieldId) = parserFieldId
             ElseIf Len(tableId) > 0 Then
                 qualifiedMap(tableId & "." & fieldId) = tableId & "." & fieldName
+                qualifiedParserMap(tableId & "." & fieldId) = tableId & "." & parserFieldId
             End If
         End If
     Next rowNumber
 End Sub
 
-' 1行分のSQLへ変換表を適用し、変換後値を記録
+' 1行分のSQLへ変換表を適用し、必要な場合だけ変換後値を記録
 Private Function ApplyMappings( _
     ByVal sourceText As String, _
     ByVal qualifiedMap As Object, _
     ByVal qualifiedKeys As Variant, _
     ByVal standaloneMap As Object, _
     ByVal standaloneKeys As Variant, _
-    ByVal replacementValues As Object) As String
+    ByVal replacementValues As Object, _
+    Optional ByVal trackReplacements As Boolean = True) As String
     Dim resultText As String
 
     resultText = sourceText
 
-    resultText = ApplyMappingSet(resultText, qualifiedMap, qualifiedKeys, replacementValues, False)
-    resultText = ApplyMappingSet(resultText, standaloneMap, standaloneKeys, replacementValues, True)
+    resultText = ApplyMappingSet( _
+        resultText, qualifiedMap, qualifiedKeys, replacementValues, False, trackReplacements)
+    resultText = ApplyMappingSet( _
+        resultText, standaloneMap, standaloneKeys, replacementValues, True, trackReplacements)
 
     ApplyMappings = resultText
 End Function
 
-' 指定された変換表を1行分のSQLへ適用
+' 指定された1組の変換表を1行分のSQLへ適用
 Private Function ApplyMappingSet( _
     ByVal sourceText As String, _
     ByVal mapping As Object, _
     ByVal sortedKeys As Variant, _
     ByVal replacementValues As Object, _
-    ByVal standaloneMode As Boolean) As String
+    ByVal standaloneMode As Boolean, _
+    ByVal trackReplacements As Boolean) As String
     Dim resultText As String
     Dim key As Variant
     Dim searchText As String
@@ -195,7 +222,7 @@ Private Function ApplyMappingSet( _
             replacementText = CStr(mapping(searchText))
             changeCount = 0
             resultText = ReplaceIdentifier(resultText, searchText, replacementText, changeCount, firstMatchIndex, standaloneMode)
-            If changeCount > 0 Then
+            If changeCount > 0 And trackReplacements Then
                 AddReplacementValue replacementValues, replacementText, firstMatchIndex
             End If
         End If
@@ -394,6 +421,11 @@ Private Function IsUsableJapaneseName(ByVal value As String) As Boolean
     If InStr(1, normalized, MissingNameText(), vbBinaryCompare) > 0 Then Exit Function
 
     IsUsableJapaneseName = True
+End Function
+
+' 変換定義行に対応するparser専用フィールドIDを生成
+Private Function ParserFieldIdentifier(ByVal rowNumber As Long) As String
+    ParserFieldIdentifier = "__SAF_FIELD_R" & Format$(rowNumber, "000000") & "__"
 End Function
 
 ' 変換定義シートを取得
@@ -652,7 +684,7 @@ Private Sub WriteReplacementValues(ByVal wsSql As Worksheet, ByVal rowNumber As 
 
     keys = SortedKeysByValueAsc(replacementValues)
     For index = LBound(keys) To UBound(keys)
-        wsSql.Cells(rowNumber, COL_REPLACEMENT + index).Value = CStr(keys(index))
+        SetOutputCellText wsSql.Cells(rowNumber, COL_REPLACEMENT + index), CStr(keys(index))
     Next index
 End Sub
 
@@ -739,15 +771,23 @@ Private Sub WriteMappingDefinitionFile(ByVal filePath As String, ByVal wsRef As 
     Dim rowNumber As Long
     Dim lastRow As Long
     Dim mappingText As String
+    Dim fieldName As String
+    Dim parserFieldId As String
 
-    mappingText = "SAF_MAPPINGS" & vbTab & "1"
+    mappingText = "SAF_MAPPINGS" & vbTab & "2"
     lastRow = LastUsedRow(wsRef)
     For rowNumber = 2 To lastRow
+        fieldName = NormalizeName(wsRef.Cells(rowNumber, COL_FIELD_NAME).Value)
+        parserFieldId = ""
+        If IsUsableJapaneseName(fieldName) Then
+            parserFieldId = ParserFieldIdentifier(rowNumber)
+        End If
         mappingText = mappingText & vbCrLf & "M" & vbTab & _
             EscapeProtocolField(CStr(wsRef.Cells(rowNumber, COL_TABLE_ID).Value)) & vbTab & _
             EscapeProtocolField(CStr(wsRef.Cells(rowNumber, COL_TABLE_NAME).Value)) & vbTab & _
             EscapeProtocolField(CStr(wsRef.Cells(rowNumber, COL_FIELD_ID).Value)) & vbTab & _
-            EscapeProtocolField(CStr(wsRef.Cells(rowNumber, COL_FIELD_NAME).Value))
+            EscapeProtocolField(fieldName) & vbTab & _
+            EscapeProtocolField(parserFieldId)
     Next rowNumber
 
     WriteUtf8TextFile filePath, mappingText
@@ -835,7 +875,7 @@ InvalidPlan:
     ApplyOutputPlan = False
 End Function
 
-' 先頭アポストロフィをExcelの文字列プレフィックスとして消費させず書き込む
+' 数式判定と先頭アポストロフィの消費を避けて文字列を書き込む
 Private Sub SetOutputCellText(ByVal targetCell As Range, ByVal cellValue As String)
     targetCell.NumberFormat = "@"
     If Left$(cellValue, 1) = "'" Then

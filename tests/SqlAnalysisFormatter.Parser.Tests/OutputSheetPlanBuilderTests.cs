@@ -51,6 +51,111 @@ public sealed class OutputSheetPlanBuilderTests
     }
 
     /// <summary>
+    /// 単一テーブルでは単独フィールド定義のテーブル和名を参照表示へ使用することを確認
+    /// </summary>
+    [TestMethod]
+    public void Build_UsesStandaloneMappingTableNameForSingleTable()
+    {
+        const string sql = "select name from [user]";
+        MappingDefinition[] mappings =
+        [
+            new("-", "ユーザー", "name", "名前")
+        ];
+
+        var plan = OutputSheetPlanBuilder.Build(sql, mappings);
+
+        Assert.IsFalse(plan.IsFallback);
+        Assert.AreEqual("参照テーブル: ユーザー", CellValue(plan, 2, 1));
+    }
+
+    /// <summary>
+    /// 単独フィールド定義から解決したテーブル和名にも明示別名を付けることを確認
+    /// </summary>
+    [TestMethod]
+    public void Build_KeepsAliasForStandaloneMappingTableName()
+    {
+        const string sql = "select u.name from [user] as u";
+        MappingDefinition[] mappings =
+        [
+            new("-", "ユーザー", "name", "名前")
+        ];
+
+        var plan = OutputSheetPlanBuilder.Build(sql, mappings);
+
+        Assert.IsFalse(plan.IsFallback);
+        Assert.AreEqual("参照テーブル: ユーザー[u]", CellValue(plan, 2, 1));
+    }
+
+    /// <summary>
+    /// 単独フィールド定義のテーブル和名が複数ある場合は推測しないことを確認
+    /// </summary>
+    [TestMethod]
+    public void Build_DoesNotGuessAmbiguousStandaloneMappingTableName()
+    {
+        const string sql = "select name from [user]";
+        MappingDefinition[] mappings =
+        [
+            new("-", "ユーザー", "name", "名前"),
+            new("-", "注文", "order_id", "注文ID")
+        ];
+
+        var plan = OutputSheetPlanBuilder.Build(sql, mappings);
+
+        Assert.IsFalse(plan.IsFallback);
+        Assert.AreEqual("参照テーブル: (和名未取得)[user]", CellValue(plan, 2, 1));
+    }
+
+    /// <summary>
+    /// parser用識別子を構文文字を含む和名へ復元できることを確認
+    /// </summary>
+    [TestMethod]
+    public void Build_RestoresParserFieldIdentifiersContainingSqlSyntax()
+    {
+        const string sql = """
+            SELECT
+                tb1.__SAF_FIELD_R000002__
+                , __SAF_FIELD_R000003__
+                , tb1.__SAF_FIELD_R000004__
+            FROM
+                invoices AS tb1
+            """;
+        MappingDefinition[] mappings =
+        [
+            new("tb1", "請求", "amount", "請求額[税込]/月", "__SAF_FIELD_R000002__"),
+            new("-", "", "status", "状態 - 判定(仮), 100%", "__SAF_FIELD_R000003__"),
+            new("tb1", "請求", "owner", "担当者's/*主*/--現行", "__SAF_FIELD_R000004__")
+        ];
+
+        var plan = OutputSheetPlanBuilder.Build(sql, mappings);
+
+        Assert.IsFalse(plan.IsFallback);
+        Assert.AreEqual("tb1.請求額[税込]/月", CellValue(plan, 3, 17));
+        Assert.AreEqual("状態 - 判定(仮), 100%", CellValue(plan, 4, 17));
+        Assert.AreEqual("tb1.担当者's/*主*/--現行", CellValue(plan, 5, 17));
+        Assert.IsFalse(plan.Cells.Any(cell => cell.Value.Contains("__SAF_FIELD_", StringComparison.Ordinal)));
+    }
+
+    /// <summary>
+    /// 復元した和名を別のparser用IDとして再変換しないことを確認
+    /// </summary>
+    [TestMethod]
+    public void Build_DoesNotRestoreParserFieldIdentifiersRecursively()
+    {
+        const string sql = "SELECT tb1.__SAF_FIELD_R000002__, tb1.__SAF_FIELD_R000003__ FROM users AS tb1";
+        MappingDefinition[] mappings =
+        [
+            new("tb1", "ユーザー", "first", "参照__SAF_FIELD_R000003__", "__SAF_FIELD_R000002__"),
+            new("tb1", "ユーザー", "second", "氏名", "__SAF_FIELD_R000003__")
+        ];
+
+        var plan = OutputSheetPlanBuilder.Build(sql, mappings);
+
+        Assert.IsFalse(plan.IsFallback);
+        Assert.AreEqual("tb1.参照__SAF_FIELD_R000003__", CellValue(plan, 3, 17));
+        Assert.AreEqual("tb1.氏名", CellValue(plan, 4, 17));
+    }
+
+    /// <summary>
     /// COALESCEの関数名だけを大文字へ統一することを確認
     /// </summary>
     [TestMethod]
