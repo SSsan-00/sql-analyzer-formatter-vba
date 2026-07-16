@@ -70,11 +70,13 @@ powershell -ExecutionPolicy Bypass -File tools/Set-ManualOutputCase.ps1 -CaseId 
 
 ## Publish
 
-parser は .NET 8.0、win-x64、self-contained、単一 exe として publish します。
+parser は .NET 8.0、win-x64、self-contained、単一 exe として publish します。単一EXEの圧縮は起動時の展開コストを避けるため無効にしています。配布サイズを理由に再度有効化する場合は、`run-output-golden-tests.ps1 -MeasurePerformance`で`Analyze`時間への影響を確認してください。
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File tools/publish-parser.ps1
 ```
+
+VBA側はparserの描画計画を全行検証してから、二次元配列としてアウトプット範囲へ一括書込みします。セル単位のCOM書込みへ戻すと解析時間が増えるため、値の設定はまとめたまま維持してください。
 
 ## Bootstrap
 

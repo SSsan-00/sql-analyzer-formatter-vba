@@ -857,14 +857,19 @@ End Function
 Private Function ApplyOutputPlan(ByVal ws As Worksheet, ByVal planText As String) As Boolean
     Dim lines As Variant
     Dim fields As Variant
+    Dim cellValues As Variant
+    Dim section As Variant
+    Dim sections As Collection
     Dim lineText As String
     Dim normalizedText As String
+    Dim cellValue As String
     Dim lineIndex As Long
     Dim rowCount As Long
     Dim rowNumber As Long
     Dim columnNumber As Long
     Dim startRow As Long
     Dim endRow As Long
+    Dim outputRange As Range
 
     On Error GoTo InvalidPlan
 
@@ -878,7 +883,12 @@ Private Function ApplyOutputPlan(ByVal ws As Worksheet, ByVal planText As String
     rowCount = CLng(fields(2))
     If rowCount < 0 Then Exit Function
 
-    ApplyOutputSheetDimensions ws, rowCount
+    Set sections = New Collection
+    If rowCount > 0 Then
+        ReDim cellValues(1 To rowCount, 1 To OUTPUT_LAST_COLUMN)
+    End If
+
+    ' 全行を先に検証し、セル値と書式セクションをメモリ上へ構成する
     For lineIndex = 1 To UBound(lines)
         lineText = CStr(lines(lineIndex))
         If Len(lineText) > 0 Then
@@ -890,21 +900,35 @@ Private Function ApplyOutputPlan(ByVal ws As Worksheet, ByVal planText As String
                     If Not IsNumeric(fields(1)) Or Not IsNumeric(fields(2)) Then GoTo InvalidPlan
                     rowNumber = CLng(fields(1))
                     columnNumber = CLng(fields(2))
-                    If rowNumber < 1 Or columnNumber < 1 Or columnNumber > OUTPUT_LAST_COLUMN Then GoTo InvalidPlan
-                    SetOutputCellText _
-                        ws.Cells(rowNumber, columnNumber), _
-                        UnescapeProtocolField(CStr(fields(3)))
+                    If rowNumber < 1 Or rowNumber > rowCount Or _
+                        columnNumber < 1 Or columnNumber > OUTPUT_LAST_COLUMN Then GoTo InvalidPlan
+                    cellValue = UnescapeProtocolField(CStr(fields(3)))
+                    If Left$(cellValue, 1) = "'" Then
+                        cellValue = "'" & cellValue
+                    End If
+                    cellValues(rowNumber, columnNumber) = cellValue
                 Case "S"
                     If Not IsNumeric(fields(2)) Or Not IsNumeric(fields(3)) Then GoTo InvalidPlan
                     startRow = CLng(fields(2))
                     endRow = CLng(fields(3))
-                    If startRow < 1 Or endRow < startRow Then GoTo InvalidPlan
-                    ApplyOutputSectionStyle ws, CStr(fields(1)), startRow, endRow
+                    If startRow < 1 Or endRow < startRow Or endRow > rowCount Then GoTo InvalidPlan
+                    sections.Add Array(CStr(fields(1)), startRow, endRow)
                 Case Else
                     GoTo InvalidPlan
             End Select
         End If
     Next lineIndex
+
+    ApplyOutputSheetDimensions ws, rowCount
+    If rowCount > 0 Then
+        Set outputRange = ws.Range(ws.Cells(1, 1), ws.Cells(rowCount, OUTPUT_LAST_COLUMN))
+        outputRange.NumberFormat = "@"
+        ' Excel COM呼出しをセルごとではなく1回へまとめる
+        outputRange.Value = cellValues
+    End If
+    For Each section In sections
+        ApplyOutputSectionStyle ws, CStr(section(0)), CLng(section(1)), CLng(section(2))
+    Next section
 
     ApplyOutputSheetFont ws, rowCount
     ApplyOutputSheetView ws

@@ -16,16 +16,11 @@ if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
 New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
 
 # 利用者の.NET導入を不要にするため、単一exeへまとめる
-dotnet publish $projectPath `
-    -c $Configuration `
-    -r $RuntimeIdentifier `
-    --self-contained true `
-    -p:PublishSingleFile=true `
-    -p:IncludeNativeLibrariesForSelfExtract=true `
-    -p:EnableCompressionInSingleFile=true `
-    -p:DebugType=None `
-    -p:DebugSymbols=false `
-    -o $OutputDirectory
+# 圧縮単一EXEは毎回の展開コストが大きいため、起動時間を優先する
+& dotnet publish $projectPath -c $Configuration -r $RuntimeIdentifier --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=false -p:DebugType=None -p:DebugSymbols=false -o $OutputDirectory
+if ($LASTEXITCODE -ne 0) {
+    throw "Parser publish failed: exit code $LASTEXITCODE"
+}
 
 $exePath = Join-Path $OutputDirectory 'SqlAnalysisFormatter.Parser.exe'
 if (-not (Test-Path -LiteralPath $exePath)) {
