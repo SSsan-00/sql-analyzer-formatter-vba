@@ -1166,7 +1166,7 @@ public static class OutputSheetPlanBuilder
             row = WriteCaseResultLine(
                 cells,
                 sql,
-                "それ以外",
+                "ELSE",
                 expression.ElseExpression,
                 row,
                 column);
@@ -1203,7 +1203,7 @@ public static class OutputSheetPlanBuilder
             row = WriteCaseResultLine(
                 cells,
                 sql,
-                "それ以外",
+                "ELSE",
                 expression.ElseExpression,
                 row,
                 column);
@@ -1244,14 +1244,55 @@ public static class OutputSheetPlanBuilder
         }
 
         var isDirectCase = cases.Count == 1 && ReferenceEquals(result, cases[0]);
-        var resultText = isDirectCase
-            ? "CASE"
-            : RenderExpressionWithCasePlaceholders(sql, result, cases);
+        if (isDirectCase)
+        {
+            return WriteDirectNestedCaseResult(
+                cells,
+                sql,
+                condition,
+                cases[0],
+                row,
+                column);
+        }
+
+        var resultText = RenderExpressionWithCasePlaceholders(sql, result, cases);
         cells.Add(new OutputCell(row, column, $"{condition} → {resultText}"));
         row++;
-        var consumedRows = isDirectCase
-            ? WriteCaseBranches(cells, sql, cases[0], row, column + 2)
-            : WriteEmbeddedCaseBranches(cells, sql, cases, row, column + 2);
+        var consumedRows = WriteEmbeddedCaseBranches(cells, sql, cases, row, column + 2);
+        return row + consumedRows;
+    }
+
+    /// <summary>
+    /// 直接ネストしたCASEは人工的なCASE行を作らず、親条件と最初の内側条件を同じ行へ連結
+    /// </summary>
+    private static int WriteDirectNestedCaseResult(
+        ICollection<OutputCell> cells,
+        string sql,
+        string condition,
+        ScalarExpression nestedCase,
+        int row,
+        int column)
+    {
+        var nestedCells = new List<OutputCell>();
+        var consumedRows = WriteCaseBranches(
+            nestedCells,
+            sql,
+            nestedCase,
+            row,
+            column + 2);
+        if (nestedCells.Count == 0)
+        {
+            cells.Add(new OutputCell(row, column, $"{condition} → CASE"));
+            return row + 1;
+        }
+
+        var first = nestedCells[0];
+        cells.Add(new OutputCell(row, column, $"{condition} → {first.Value}"));
+        foreach (var nestedCell in nestedCells.Skip(1))
+        {
+            cells.Add(nestedCell);
+        }
+
         return row + consumedRows;
     }
 

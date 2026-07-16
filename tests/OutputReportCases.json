@@ -347,7 +347,6 @@
     },
     {
       "id": "SEL-069",
-      "review_status": "暫定確定（ユーザーレビュー未実施）",
       "sql_lines": ["select", "    case ", "        when tb1.状態 = 'ACTIVE' ", "            then 'ENABLED' ", "        else case ", "            when tb1.削除日時 is null ", "                then 'PENDING' ", "            else 'DISABLED' ", "            end ", "        end as user_status ", "from", "    users as tb1"],
       "tables": { "tb1": "ユーザー" }
     },

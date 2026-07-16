@@ -381,11 +381,11 @@ public sealed class OutputSheetPlanBuilderTests
         Assert.AreEqual("CASE結果", CellValue(topPlan, 3, 7));
         Assert.AreEqual("※", CellValue(topPlan, 3, 15));
         Assert.AreEqual("@all_rows = 1 → 100", CellValue(topPlan, 3, 17));
-        Assert.AreEqual("それ以外 → 10", CellValue(topPlan, 4, 17));
+        Assert.AreEqual("ELSE → 10", CellValue(topPlan, 4, 17));
         Assert.AreEqual("OFFSET (CASE結果) ROWS FETCH NEXT 20 ROWS ONLY", CellValue(offsetPlan, 3, 7));
         Assert.AreEqual("※", CellValue(offsetPlan, 3, 15));
         Assert.AreEqual("@skip_rows = 1 → 10", CellValue(offsetPlan, 3, 17));
-        Assert.AreEqual("それ以外 → 0", CellValue(offsetPlan, 4, 17));
+        Assert.AreEqual("ELSE → 0", CellValue(offsetPlan, 4, 17));
     }
 
     /// <summary>
@@ -478,7 +478,30 @@ public sealed class OutputSheetPlanBuilderTests
             (4, 17, "status_name"),
             (4, 31, "※"),
             (4, 32, "tb1.状態 = 'ACTIVE' → '有効'"),
-            (5, 32, "それ以外 → '無効'"));
+            (5, 32, "ELSE → '無効'"));
+    }
+
+    /// <summary>
+    /// 単純CASEのELSEも原文どおりELSEと表示することを確認
+    /// </summary>
+    [TestMethod]
+    public void Build_UsesElseKeywordForSimpleCase()
+    {
+        const string sql = """
+            SELECT
+                CASE tb1.状態
+                    WHEN 'ACTIVE' THEN 1
+                    ELSE 0
+                END AS status_code
+            FROM
+                users AS tb1
+            """;
+
+        var plan = OutputSheetPlanBuilder.Build(sql, [new("tb1", "ユーザー", "", "")]);
+
+        Assert.AreEqual(4, plan.RowCount);
+        Assert.AreEqual("tb1.状態 = 'ACTIVE' → 1", CellValue(plan, 3, 32));
+        Assert.AreEqual("ELSE → 0", CellValue(plan, 4, 32));
     }
 
     /// <summary>
@@ -504,7 +527,7 @@ public sealed class OutputSheetPlanBuilderTests
 
         var plan = OutputSheetPlanBuilder.Build(sql, [new("tb1", "ユーザー", "", "")]);
 
-        Assert.AreEqual(7, plan.RowCount);
+        Assert.AreEqual(6, plan.RowCount);
         AssertCells(
             plan,
             (1, 1, "＜DB入出力項目定義＞"),
@@ -514,11 +537,10 @@ public sealed class OutputSheetPlanBuilderTests
             (3, 15, ":"),
             (3, 17, "user_category"),
             (3, 31, "※"),
-            (3, 32, "tb1.状態 = 'ACTIVE' → CASE"),
-            (4, 34, "tb1.ランクコード = 'VIP' → '優良'"),
-            (5, 34, "それ以外 → '通常'"),
-            (6, 32, "tb1.状態 = 'LOCKED' → '停止'"),
-            (7, 32, "それ以外 → '無効'"));
+            (3, 32, "tb1.状態 = 'ACTIVE' → tb1.ランクコード = 'VIP' → '優良'"),
+            (4, 34, "ELSE → '通常'"),
+            (5, 32, "tb1.状態 = 'LOCKED' → '停止'"),
+            (6, 32, "ELSE → '無効'"));
     }
 
     /// <summary>
@@ -553,11 +575,11 @@ public sealed class OutputSheetPlanBuilderTests
             (3, 31, "※"),
             (3, 32, "SUM(CASE結果)"),
             (3, 34, "tb1.状態 = 'PAID' → tb1.金額"),
-            (4, 34, "それ以外 → 0"));
+            (4, 34, "ELSE → 0"));
     }
 
     /// <summary>
-    /// ELSEにあるCASEを外側の分岐より一段深く展開することを確認
+    /// ELSEにあるCASEの最初の条件を外側ELSEへ連結し、残りを一段深く展開することを確認
     /// </summary>
     [TestMethod]
     public void Build_ExpandsCaseNestedInsideElse()
@@ -578,11 +600,10 @@ public sealed class OutputSheetPlanBuilderTests
 
         var plan = OutputSheetPlanBuilder.Build(sql, [new("tb1", "ユーザー", "", "")]);
 
-        Assert.AreEqual(6, plan.RowCount);
+        Assert.AreEqual(5, plan.RowCount);
         Assert.AreEqual("tb1.状態 = 'ACTIVE' → '有効'", CellValue(plan, 3, 32));
-        Assert.AreEqual("それ以外 → CASE", CellValue(plan, 4, 32));
-        Assert.AreEqual("tb1.削除日時 IS NULL → '保留'", CellValue(plan, 5, 34));
-        Assert.AreEqual("それ以外 → '無効'", CellValue(plan, 6, 34));
+        Assert.AreEqual("ELSE → tb1.削除日時 IS NULL → '保留'", CellValue(plan, 4, 32));
+        Assert.AreEqual("ELSE → '無効'", CellValue(plan, 5, 34));
     }
 
     /// <summary>
@@ -607,7 +628,7 @@ public sealed class OutputSheetPlanBuilderTests
         Assert.AreEqual("CASE結果", CellValue(plan, 3, 17));
         Assert.AreEqual("※", CellValue(plan, 3, 31));
         Assert.AreEqual("tb1.状態 = 'ACTIVE' → 1", CellValue(plan, 3, 32));
-        Assert.AreEqual("それ以外 → 0", CellValue(plan, 4, 32));
+        Assert.AreEqual("ELSE → 0", CellValue(plan, 4, 32));
     }
 
     /// <summary>
@@ -638,7 +659,7 @@ public sealed class OutputSheetPlanBuilderTests
         Assert.AreEqual("tb1.状態 = 'ACTIVE'", CellValue(plan, 3, 34));
         Assert.AreEqual("AND", CellValue(plan, 4, 32));
         Assert.AreEqual("tb1.削除日時 IS NULL → 1", CellValue(plan, 4, 34));
-        Assert.AreEqual("それ以外 → 0", CellValue(plan, 5, 32));
+        Assert.AreEqual("ELSE → 0", CellValue(plan, 5, 32));
     }
 
     /// <summary>
@@ -662,7 +683,7 @@ public sealed class OutputSheetPlanBuilderTests
         Assert.AreEqual("tb1.状態 = 'PENDING'", CellValue(plan, 3, 34));
         Assert.AreEqual("OR", CellValue(plan, 4, 32));
         Assert.AreEqual("tb1.状態 = 'LOCKED' → 1", CellValue(plan, 4, 34));
-        Assert.AreEqual("それ以外 → 0", CellValue(plan, 5, 32));
+        Assert.AreEqual("ELSE → 0", CellValue(plan, 5, 32));
     }
 
     /// <summary>
@@ -692,7 +713,7 @@ public sealed class OutputSheetPlanBuilderTests
         Assert.AreEqual("amount_band", CellValue(plan, 5, 17));
         Assert.AreEqual("※", CellValue(plan, 5, 31));
         Assert.AreEqual("tb1.金額 >= 10000 → 'HIGH'", CellValue(plan, 5, 32));
-        Assert.AreEqual("それ以外 → 'NORMAL'", CellValue(plan, 6, 32));
+        Assert.AreEqual("ELSE → 'NORMAL'", CellValue(plan, 6, 32));
     }
 
     /// <summary>
@@ -719,7 +740,7 @@ public sealed class OutputSheetPlanBuilderTests
         Assert.AreEqual(6, plan.RowCount);
         Assert.AreEqual("CASE結果", CellValue(plan, 4, 17));
         Assert.AreEqual("tb1.状態 = 'ACTIVE' → 0", CellValue(plan, 4, 32));
-        Assert.AreEqual("それ以外 → 1", CellValue(plan, 5, 32));
+        Assert.AreEqual("ELSE → 1", CellValue(plan, 5, 32));
         Assert.AreEqual("ソートキー2", CellValue(plan, 6, 7));
         Assert.AreEqual("tb1.ユーザーID", CellValue(plan, 6, 17));
     }
@@ -750,7 +771,7 @@ public sealed class OutputSheetPlanBuilderTests
         Assert.AreEqual("tb1.状態 = 'ACTIVE'", CellValue(plan, 4, 34));
         Assert.AreEqual("AND", CellValue(plan, 5, 32));
         Assert.AreEqual("tb1.削除日時 IS NULL → 1", CellValue(plan, 5, 34));
-        Assert.AreEqual("それ以外 → 0", CellValue(plan, 6, 32));
+        Assert.AreEqual("ELSE → 0", CellValue(plan, 6, 32));
     }
 
     /// <summary>
@@ -775,7 +796,7 @@ public sealed class OutputSheetPlanBuilderTests
         Assert.AreEqual("SUM(CASE結果) > 0", CellValue(plan, 5, 17));
         Assert.AreEqual("※", CellValue(plan, 5, 31));
         Assert.AreEqual("tb1.状態 = 'PAID' → 1", CellValue(plan, 5, 32));
-        Assert.AreEqual("それ以外 → 0", CellValue(plan, 6, 32));
+        Assert.AreEqual("ELSE → 0", CellValue(plan, 6, 32));
     }
 
     /// <summary>
@@ -799,10 +820,10 @@ public sealed class OutputSheetPlanBuilderTests
 
         Assert.AreEqual("COALESCE(CASE結果, 0)", CellValue(plan, 4, 17));
         Assert.AreEqual("tb1.状態 = 'ACTIVE' → 1", CellValue(plan, 4, 32));
-        Assert.AreEqual("それ以外 → 0", CellValue(plan, 5, 32));
+        Assert.AreEqual("ELSE → 0", CellValue(plan, 5, 32));
         Assert.AreEqual("IIF(CASE結果 = 1, 0, 1)", CellValue(plan, 6, 17));
         Assert.AreEqual("tb1.状態 = 'ACTIVE' → 1", CellValue(plan, 6, 32));
-        Assert.AreEqual("それ以外 → 0", CellValue(plan, 7, 32));
+        Assert.AreEqual("ELSE → 0", CellValue(plan, 7, 32));
     }
 
     /// <summary>
@@ -825,10 +846,10 @@ public sealed class OutputSheetPlanBuilderTests
         Assert.AreEqual("SUM(CASE結果1) + SUM(CASE結果2)", CellValue(plan, 3, 32));
         Assert.AreEqual("CASE結果1", CellValue(plan, 3, 34));
         Assert.AreEqual("tb1.状態 = 'PAID' → tb1.金額", CellValue(plan, 3, 36));
-        Assert.AreEqual("それ以外 → 0", CellValue(plan, 4, 36));
+        Assert.AreEqual("ELSE → 0", CellValue(plan, 4, 36));
         Assert.AreEqual("CASE結果2", CellValue(plan, 5, 34));
         Assert.AreEqual("tb1.状態 = 'REFUND' → tb1.金額", CellValue(plan, 5, 36));
-        Assert.AreEqual("それ以外 → 0", CellValue(plan, 6, 36));
+        Assert.AreEqual("ELSE → 0", CellValue(plan, 6, 36));
     }
 
     /// <summary>
@@ -979,7 +1000,7 @@ public sealed class OutputSheetPlanBuilderTests
         Assert.AreEqual("tb1.状態 = 'ACTIVE'", CellValue(plan, 5, 34));
         Assert.AreEqual("AND", CellValue(plan, 6, 32));
         Assert.AreEqual("tb2.有効区分 = 1 → tb1.ユーザーID", CellValue(plan, 6, 34));
-        Assert.AreEqual("それ以外 → 0", CellValue(plan, 7, 32));
+        Assert.AreEqual("ELSE → 0", CellValue(plan, 7, 32));
     }
 
     /// <summary>
@@ -1311,7 +1332,7 @@ public sealed class OutputSheetPlanBuilderTests
         Assert.AreEqual("CASE結果", CellValue(plan, 4, 19));
         Assert.AreEqual("※", CellValue(plan, 4, 35));
         Assert.AreEqual("@active = 1 → 'ACTIVE'", CellValue(plan, 4, 37));
-        Assert.AreEqual("それ以外 → 'INACTIVE'", CellValue(plan, 5, 37));
+        Assert.AreEqual("ELSE → 'INACTIVE'", CellValue(plan, 5, 37));
     }
 
     /// <summary>
@@ -1654,7 +1675,7 @@ public sealed class OutputSheetPlanBuilderTests
         Assert.AreEqual("tb1.削除日時 IS NULL", CellValue(plan, 4, 54));
         Assert.AreEqual("AND", CellValue(plan, 5, 52));
         Assert.AreEqual("tb1.有効区分 = 1 → 'ACTIVE'", CellValue(plan, 5, 54));
-        Assert.AreEqual("それ以外 → 'INACTIVE'", CellValue(plan, 6, 52));
+        Assert.AreEqual("ELSE → 'INACTIVE'", CellValue(plan, 6, 52));
         Assert.HasCount(3, plan.Sections);
         Assert.AreEqual("TransferGroup", plan.Sections[2].Kind.ToString());
         Assert.AreEqual(4, plan.Sections[2].StartRow);
@@ -1685,7 +1706,7 @@ public sealed class OutputSheetPlanBuilderTests
         Assert.IsFalse(plan.IsFallback);
         Assert.AreEqual("CASE結果", CellValue(plan, 4, 19));
         Assert.AreEqual("tb2.氏名 IS NULL → tb1.氏名", CellValue(plan, 4, 37));
-        Assert.AreEqual("それ以外 → tb2.氏名", CellValue(plan, 5, 37));
+        Assert.AreEqual("ELSE → tb2.氏名", CellValue(plan, 5, 37));
         Assert.IsFalse(plan.Sections.Any(section => section.Kind == OutputSectionKind.TransferGroup));
     }
 

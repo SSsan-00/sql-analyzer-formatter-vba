@@ -817,7 +817,6 @@
     {
       "id": "SEL-069",
       "title": "ELSE内のネストCASE",
-      "review_status": "暫定確定（ユーザーレビュー未実施）",
       "sql_lines": [
         "select",
         "    case ",
