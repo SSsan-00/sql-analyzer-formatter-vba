@@ -289,14 +289,25 @@ End Sub
 
 '@TestMethod("ClearData")
 Public Sub ClearData_ClearsOutputSheet()
+    Dim activeSheetBeforeClear As Object
+    Dim wsSql As Worksheet
     Dim wsOutput As Worksheet
 
     SetupWorkbook
+    Set wsSql = ThisWorkbook.Worksheets(SqlSheetName())
     Set wsOutput = ThisWorkbook.Worksheets(OutputSheetName())
     wsOutput.Cells(1, 1).Value = "output header"
     wsOutput.Cells(3, 2).Value = "output detail"
     wsOutput.Cells(4, 90).Value = "last column output"
     wsOutput.Cells(5, 1).Formula = "=""formula output"""
+
+    ' クリア前のアウトプット表示位置とアクティブシートを再現
+    wsOutput.Activate
+    wsOutput.Cells(100, 90).Select
+    ActiveWindow.ScrollRow = 50
+    ActiveWindow.ScrollColumn = 40
+    wsSql.Activate
+    Set activeSheetBeforeClear = ActiveSheet
 
     ClearData False
 
@@ -305,6 +316,10 @@ Public Sub ClearData_ClearsOutputSheet()
     AssertCellValue wsOutput.Cells(4, 90), ""
     AssertCellValue wsOutput.Cells(5, 1), ""
     AssertOutputSheetFont
+    If Not ActiveSheet Is activeSheetBeforeClear Then
+        Fail "Active sheet changed while clearing output."
+    End If
+    AssertOutputViewReset wsOutput, activeSheetBeforeClear
 End Sub
 
 ' アウトプット順序テスト用データを作成
@@ -1289,6 +1304,18 @@ Private Sub AssertOutputSheetFont()
 
     AssertCellFont wsOutput.Cells(1, 1), OutputFontName(), 9
     AssertCellFont wsOutput.Cells(20, 5), OutputFontName(), 9
+End Sub
+
+' アウトプットシートの選択セルとスクロール位置がA1へ戻ることを検証
+Private Sub AssertOutputViewReset(ByVal wsOutput As Worksheet, ByVal previousSheet As Object)
+    wsOutput.Activate
+    If Selection.Address <> "$A$1" Then
+        Fail "Output selection should be A1 after clearing."
+    End If
+    If ActiveWindow.ScrollRow <> 1 Or ActiveWindow.ScrollColumn <> 1 Then
+        Fail "Output scroll position should be A1 after clearing."
+    End If
+    previousSheet.Activate
 End Sub
 
 ' アウトプットシートのコピーボタンを検証

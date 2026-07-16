@@ -134,10 +134,45 @@ Public Sub ClearData(Optional ByVal showMessage As Boolean = True)
     ClearRowsBelowHeader wsSql, COL_REPLACEMENT
     ClearOutputSheet wsOutput
     RestoreHeaders wsRef, wsSql
+    ResetOutputSheetViewPosition wsOutput
     If showMessage Then
         MsgBox ClearDoneMessage(), vbInformation
     End If
     RestoreFindSearchOrderByRows wsSql
+End Sub
+
+' アウトプットの選択セルとスクロールをA1へ戻し、元のシート表示を維持
+Private Sub ResetOutputSheetViewPosition(ByVal ws As Worksheet)
+    Dim previousSheet As Object
+    Dim previousScreenUpdating As Boolean
+    Dim errorNumber As Long
+    Dim errorSource As String
+    Dim errorDescription As String
+
+    On Error GoTo RestoreApplicationState
+    previousScreenUpdating = Application.ScreenUpdating
+    Set previousSheet = ActiveSheet
+    Application.ScreenUpdating = False
+
+    ' 選択セルとスクロール位置の変更には対象シートの一時表示が必要
+    ws.Activate
+    ws.Range("A1").Select
+    ActiveWindow.ScrollRow = 1
+    ActiveWindow.ScrollColumn = 1
+
+RestoreApplicationState:
+    errorNumber = Err.Number
+    errorSource = Err.Source
+    errorDescription = Err.Description
+
+    On Error Resume Next
+    If Not previousSheet Is Nothing Then previousSheet.Activate
+    Application.ScreenUpdating = previousScreenUpdating
+    On Error GoTo 0
+
+    If errorNumber <> 0 Then
+        Err.Raise errorNumber, errorSource, errorDescription
+    End If
 End Sub
 
 ' 変換定義シートから表示用とparser用の変換表を作成
