@@ -579,8 +579,21 @@ public static class OutputSheetPlanBuilder
 
                 cells.Add(new OutputCell(row, 7, $"グループキー{index + 1}"));
                 cells.Add(new OutputCell(row, 15, ":"));
-                cells.Add(new OutputCell(row, 17, RenderGrouping(sql, query.GroupByClause.GroupingSpecifications[index])));
-                row++;
+                var grouping = query.GroupByClause.GroupingSpecifications[index];
+                if (TryGetGroupingCase(grouping, out var groupingCase))
+                {
+                    cells.Add(new OutputCell(
+                        row,
+                        17,
+                        FindSelectAlias(sql, query, groupingCase) ?? "CASE結果"));
+                    cells.Add(new OutputCell(row, 31, "※"));
+                    row += WriteCaseBranches(cells, sql, groupingCase, row);
+                }
+                else
+                {
+                    cells.Add(new OutputCell(row, 17, RenderGrouping(sql, grouping)));
+                    row++;
+                }
             }
             sections.Add(new OutputSection(OutputSectionKind.Standard, startRow, row - 1));
         }
@@ -601,16 +614,25 @@ public static class OutputSheetPlanBuilder
                     cells.Add(new OutputCell(row, 1, "並び順"));
                 }
 
-                var value = DisplayText(sql, element.Expression);
-                if (element.SortOrder == SortOrder.Descending)
-                {
-                    value += "(降順)";
-                }
-
                 cells.Add(new OutputCell(row, 7, $"ソートキー{index + 1}"));
                 cells.Add(new OutputCell(row, 15, ":"));
-                cells.Add(new OutputCell(row, 17, value));
-                row++;
+                if (IsCaseExpression(element.Expression))
+                {
+                    cells.Add(new OutputCell(row, 17, "CASE結果"));
+                    cells.Add(new OutputCell(row, 31, "※"));
+                    row += WriteCaseBranches(cells, sql, element.Expression, row);
+                }
+                else
+                {
+                    var value = DisplayText(sql, element.Expression);
+                    if (element.SortOrder == SortOrder.Descending)
+                    {
+                        value += "(降順)";
+                    }
+
+                    cells.Add(new OutputCell(row, 17, value));
+                    row++;
+                }
             }
             sections.Add(new OutputSection(OutputSectionKind.Standard, startRow, row - 1));
         }
@@ -734,6 +756,82 @@ public static class OutputSheetPlanBuilder
     }
 
     /// <summary>
+    /// CASE種別に応じて分岐を縦方向へ展開
+    /// </summary>
+    private static int WriteCaseBranches(
+        ICollection<OutputCell> cells,
+        string sql,
+        ScalarExpression expression,
+        int startRow,
+        int column = 32)
+    {
+        return expression switch
+        {
+            SearchedCaseExpression searchedCase =>
+                WriteSearchedCase(cells, sql, searchedCase, startRow, column),
+            SimpleCaseExpression simpleCase =>
+                WriteSimpleCase(cells, sql, simpleCase, startRow, column),
+            _ => 1
+        };
+    }
+
+    /// <summary>
+    /// 式がCASEか判定
+    /// </summary>
+    private static bool IsCaseExpression(ScalarExpression expression)
+    {
+        return expression is SearchedCaseExpression or SimpleCaseExpression;
+    }
+
+    /// <summary>
+    /// GROUP BY要素からCASE式を取得
+    /// </summary>
+    private static bool TryGetGroupingCase(
+        GroupingSpecification grouping,
+        out ScalarExpression expression)
+    {
+        if (grouping is ExpressionGroupingSpecification expressionGrouping &&
+            IsCaseExpression(expressionGrouping.Expression))
+        {
+            expression = expressionGrouping.Expression;
+            return true;
+        }
+
+        expression = null!;
+        return false;
+    }
+
+    /// <summary>
+    /// SELECT項目と同じ式に付けられた列エイリアスを取得
+    /// </summary>
+    private static string? FindSelectAlias(
+        string sql,
+        QuerySpecification query,
+        ScalarExpression expression)
+    {
+        var signature = ExpressionSignature(sql, expression);
+        return query.SelectElements
+            .OfType<SelectScalarExpression>()
+            .Where(item => item.ColumnName is not null)
+            .FirstOrDefault(item => ExpressionSignature(sql, item.Expression) == signature)
+            ?.ColumnName is IdentifierOrValueExpression alias
+                ? FragmentText(sql, alias)
+                : null;
+    }
+
+    /// <summary>
+    /// 空白と大文字小文字に依存しない式比較用文字列を作成
+    /// </summary>
+    private static string ExpressionSignature(string sql, TSqlFragment expression)
+    {
+        return Regex.Replace(
+            RawFragmentText(sql, expression),
+            @"\s+",
+            string.Empty,
+            RegexOptions.CultureInvariant).ToUpperInvariant();
+    }
+
+    /// <summary>
     /// WHEREやHAVINGを括弧構造に応じて行へ展開
     /// </summary>
     private static void WriteConditionSection(
@@ -746,54 +844,190 @@ public static class OutputSheetPlanBuilder
     {
         var startRow = row;
         cells.Add(new OutputCell(row, 1, label));
-        var outerParts = FlattenBooleanExpression(condition);
-        foreach (var part in outerParts)
+        var rootLayout = new ConditionLayout(7, 17, 17, 15);
+        foreach (var part in FlattenBooleanExpression(condition))
         {
-            if (TryGetParenthesizedCondition(part.Expression, out var innerCondition, out var isNegated))
-            {
-                var connector = part.Connector;
-                if (isNegated)
-                {
-                    connector = connector.Length == 0 ? "NOT" : connector + " NOT";
-                }
-
-                if (connector.Length == 0)
-                {
-                    cells.Add(new OutputCell(row, 7, "("));
-                }
-                else
-                {
-                    cells.Add(new OutputCell(row, 7, connector));
-                    cells.Add(new OutputCell(row, 15, "("));
-                }
-
-                var innerParts = FlattenBooleanExpression(innerCondition);
-                for (var innerIndex = 0; innerIndex < innerParts.Count; innerIndex++)
-                {
-                    if (innerIndex > 0)
-                    {
-                        cells.Add(new OutputCell(row, 15, innerParts[innerIndex].Connector));
-                    }
-
-                    cells.Add(new OutputCell(row, 17, DisplayText(sql, innerParts[innerIndex].Expression)));
-                    row++;
-                }
-
-                cells.Add(new OutputCell(row, 7, ")"));
-                row++;
-            }
-            else
-            {
-                if (part.Connector.Length > 0)
-                {
-                    cells.Add(new OutputCell(row, 7, part.Connector));
-                }
-
-                cells.Add(new OutputCell(row, 17, DisplayText(sql, part.Expression)));
-                row++;
-            }
+            row = WriteConditionPart(
+                cells,
+                sql,
+                part.Expression,
+                part.Connector,
+                rootLayout,
+                expandParentheses: true,
+                row);
         }
         sections.Add(new OutputSection(OutputSectionKind.Standard, startRow, row - 1));
+    }
+
+    /// <summary>
+    /// 条件部品を括弧階層とCASE展開に応じたセルへ追加
+    /// </summary>
+    private static int WriteConditionPart(
+        ICollection<OutputCell> cells,
+        string sql,
+        BooleanExpression expression,
+        string connector,
+        ConditionLayout layout,
+        bool expandParentheses,
+        int row)
+    {
+        if (TryGetParenthesizedCondition(expression, out var innerCondition, out var isNegated))
+        {
+            if (isNegated)
+            {
+                connector = connector.Length == 0 ? "NOT" : connector + " NOT";
+            }
+
+            var openColumn = connector.Length == 0
+                ? layout.ConnectorColumn
+                : layout.ConnectedGroupOpenColumn;
+            if (expandParentheses && openColumn <= 17)
+            {
+                if (connector.Length > 0)
+                {
+                    cells.Add(new OutputCell(row, layout.ConnectorColumn, connector));
+                }
+                cells.Add(new OutputCell(row, openColumn, "("));
+
+                var innerParts = FlattenBooleanExpression(innerCondition);
+                var expandNested = innerParts.Any(part => part.Connector == "OR");
+                var childLayout = CreateChildConditionLayout(
+                    layout,
+                    openColumn,
+                    connector.Length > 0);
+                foreach (var part in innerParts)
+                {
+                    row = WriteConditionPart(
+                        cells,
+                        sql,
+                        part.Expression,
+                        part.Connector,
+                        childLayout,
+                        expandNested,
+                        row);
+                }
+
+                var closeColumn = connector.Length == 0
+                    ? openColumn
+                    : layout.ConnectorColumn;
+                cells.Add(new OutputCell(row, closeColumn, ")"));
+                return row + 1;
+            }
+        }
+
+        if (connector.Length > 0)
+        {
+            cells.Add(new OutputCell(row, layout.ConnectorColumn, connector));
+        }
+
+        var valueColumn = connector.Length == 0
+            ? layout.FirstValueColumn
+            : layout.ConnectedValueColumn;
+        if (TryWriteComparedCase(cells, sql, expression, valueColumn, row, out var consumedRows))
+        {
+            return row + consumedRows;
+        }
+
+        cells.Add(new OutputCell(row, valueColumn, ConditionDisplayText(sql, expression)));
+        return row + 1;
+    }
+
+    /// <summary>
+    /// 条件式の関数表記とA5M2由来の単項符号空白を正規化
+    /// </summary>
+    private static string ConditionDisplayText(string sql, TSqlFragment expression)
+    {
+        var rawText = RawFragmentText(sql, expression);
+        var hasSpacedUnarySign = Regex.IsMatch(
+            rawText,
+            @"(?<![\w])([+-])\s+(?=\d)",
+            RegexOptions.CultureInvariant);
+        return DisplayText(
+            sql,
+            expression,
+            uppercaseDateParts: hasSpacedUnarySign,
+            compactUnarySigns: hasSpacedUnarySign);
+    }
+
+    /// <summary>
+    /// 親の括弧位置から子条件の列配置を決定
+    /// </summary>
+    private static ConditionLayout CreateChildConditionLayout(
+        ConditionLayout parent,
+        int openColumn,
+        bool hasConnector)
+    {
+        if (openColumn == 7)
+        {
+            return new ConditionLayout(15, 17, 17, 17);
+        }
+
+        if (hasConnector && openColumn - parent.ConnectorColumn >= 8)
+        {
+            return new ConditionLayout(openColumn, openColumn + 2, openColumn + 2, openColumn + 2);
+        }
+
+        return new ConditionLayout(openColumn + 2, openColumn + 2, openColumn + 4, openColumn + 4);
+    }
+
+    /// <summary>
+    /// CASEを含む比較条件を結果比較と分岐へ展開
+    /// </summary>
+    private static bool TryWriteComparedCase(
+        ICollection<OutputCell> cells,
+        string sql,
+        BooleanExpression expression,
+        int valueColumn,
+        int row,
+        out int consumedRows)
+    {
+        consumedRows = 0;
+        if (expression is not BooleanComparisonExpression comparison)
+        {
+            return false;
+        }
+
+        var caseExpression = IsCaseExpression(comparison.FirstExpression)
+            ? comparison.FirstExpression
+            : IsCaseExpression(comparison.SecondExpression)
+                ? comparison.SecondExpression
+                : null;
+        if (caseExpression is null)
+        {
+            return false;
+        }
+
+        var comparedExpression = ReferenceEquals(caseExpression, comparison.FirstExpression)
+            ? comparison.SecondExpression
+            : comparison.FirstExpression;
+        cells.Add(new OutputCell(
+            row,
+            valueColumn,
+            $"CASE結果 {ComparisonOperatorText(comparison.ComparisonType)} {DisplayText(sql, comparedExpression)}"));
+        cells.Add(new OutputCell(row, 31, "※"));
+        consumedRows = WriteCaseBranches(cells, sql, caseExpression, row);
+        return true;
+    }
+
+    /// <summary>
+    /// 比較演算子を帳票表示へ変換
+    /// </summary>
+    private static string ComparisonOperatorText(BooleanComparisonType comparisonType)
+    {
+        return comparisonType switch
+        {
+            BooleanComparisonType.GreaterThan => ">",
+            BooleanComparisonType.LessThan => "<",
+            BooleanComparisonType.GreaterThanOrEqualTo => ">=",
+            BooleanComparisonType.LessThanOrEqualTo => "<=",
+            BooleanComparisonType.NotEqualToBrackets => "<>",
+            BooleanComparisonType.NotEqualToExclamation => "!=",
+            BooleanComparisonType.NotLessThan => "!<",
+            BooleanComparisonType.NotGreaterThan => "!>",
+            BooleanComparisonType.IsDistinctFrom => "IS DISTINCT FROM",
+            BooleanComparisonType.IsNotDistinctFrom => "IS NOT DISTINCT FROM",
+            _ => "="
+        };
     }
 
     /// <summary>
@@ -1532,6 +1766,12 @@ public static class OutputSheetPlanBuilder
     private sealed record TransferItem(string Target, string Source, string Method);
 
     private sealed record ConditionPart(string Connector, BooleanExpression Expression);
+
+    private sealed record ConditionLayout(
+        int ConnectorColumn,
+        int FirstValueColumn,
+        int ConnectedValueColumn,
+        int ConnectedGroupOpenColumn);
 }
 
 /// <summary>

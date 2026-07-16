@@ -380,6 +380,154 @@ public sealed class OutputSheetPlanBuilderTests
     }
 
     /// <summary>
+    /// GROUP BYのCASEを取得項目のエイリアスと分岐へ展開することを確認
+    /// </summary>
+    [TestMethod]
+    public void Build_ExpandsCaseUsedByGroupBy()
+    {
+        const string sql = """
+            select
+                case
+                    when tb1.金額 >= 10000 then 'HIGH'
+                    else 'NORMAL'
+                end as amount_band
+            from
+                orders as tb1
+            group by
+                case
+                    when tb1.金額 >= 10000 then 'HIGH'
+                    else 'NORMAL'
+                end
+            """;
+
+        var plan = OutputSheetPlanBuilder.Build(sql, [new("tb1", "注文", "", "")]);
+
+        Assert.AreEqual(6, plan.RowCount);
+        Assert.AreEqual("amount_band", CellValue(plan, 5, 17));
+        Assert.AreEqual("※", CellValue(plan, 5, 31));
+        Assert.AreEqual("tb1.金額 >= 10000 → 'HIGH'", CellValue(plan, 5, 32));
+        Assert.AreEqual("それ以外 → 'NORMAL'", CellValue(plan, 6, 32));
+    }
+
+    /// <summary>
+    /// ORDER BYのCASEを分岐へ展開して後続キーを次の行へ送ることを確認
+    /// </summary>
+    [TestMethod]
+    public void Build_ExpandsCaseUsedByOrderBy()
+    {
+        const string sql = """
+            select
+                tb1.ユーザーID
+            from
+                users as tb1
+            order by
+                case
+                    when tb1.状態 = 'ACTIVE' then 0
+                    else 1
+                end
+                , tb1.ユーザーID
+            """;
+
+        var plan = OutputSheetPlanBuilder.Build(sql, [new("tb1", "ユーザー", "", "")]);
+
+        Assert.AreEqual(6, plan.RowCount);
+        Assert.AreEqual("CASE結果", CellValue(plan, 4, 17));
+        Assert.AreEqual("tb1.状態 = 'ACTIVE' → 0", CellValue(plan, 4, 32));
+        Assert.AreEqual("それ以外 → 1", CellValue(plan, 5, 32));
+        Assert.AreEqual("ソートキー2", CellValue(plan, 6, 7));
+        Assert.AreEqual("tb1.ユーザーID", CellValue(plan, 6, 17));
+    }
+
+    /// <summary>
+    /// WHEREで比較するCASEを比較結果と分岐へ展開することを確認
+    /// </summary>
+    [TestMethod]
+    public void Build_ExpandsCaseComparedByWhere()
+    {
+        const string sql = """
+            select
+                tb1.ユーザーID
+            from
+                users as tb1
+            where
+                case
+                    when tb1.状態 = 'ACTIVE' and tb1.削除日時 is null then 1
+                    else 0
+                end = 1
+            """;
+
+        var plan = OutputSheetPlanBuilder.Build(sql, [new("tb1", "ユーザー", "", "")]);
+
+        Assert.AreEqual(5, plan.RowCount);
+        Assert.AreEqual("CASE結果 = 1", CellValue(plan, 4, 17));
+        Assert.AreEqual("※", CellValue(plan, 4, 31));
+        Assert.AreEqual("tb1.状態 = 'ACTIVE' AND tb1.削除日時 IS NULL → 1", CellValue(plan, 4, 32));
+        Assert.AreEqual("それ以外 → 0", CellValue(plan, 5, 32));
+    }
+
+    /// <summary>
+    /// ORで分岐する深い括弧条件を列階層へ展開することを確認
+    /// </summary>
+    [TestMethod]
+    public void Build_ExpandsDeepBooleanGroups()
+    {
+        const string sql = """
+            select
+                tb1.ユーザーID
+            from
+                users as tb1
+            where
+                (
+                    (
+                        tb1.状態 in ('ACTIVE', 'LOCKED')
+                        and (tb1.メール like @domain or tb1.氏名 like @name)
+                    )
+                    or (
+                        tb1.状態 = 'PENDING'
+                        and tb1.削除日時 is null
+                    )
+                )
+                and not (
+                    tb1.ユーザーID between @from and @to
+                    or coalesce(tb1.上司ID, 0) = @manager_id
+                )
+            """;
+
+        var plan = OutputSheetPlanBuilder.Build(sql, [new("tb1", "ユーザー", "", "")]);
+
+        Assert.AreEqual(13, plan.RowCount);
+        Assert.AreEqual("(", CellValue(plan, 4, 7));
+        Assert.AreEqual("(", CellValue(plan, 4, 15));
+        Assert.AreEqual("tb1.状態 IN ('ACTIVE', 'LOCKED')", CellValue(plan, 4, 17));
+        Assert.AreEqual("AND", CellValue(plan, 5, 17));
+        Assert.AreEqual("(tb1.メール LIKE @domain OR tb1.氏名 LIKE @name)", CellValue(plan, 5, 19));
+        Assert.AreEqual("OR", CellValue(plan, 7, 15));
+        Assert.AreEqual("(", CellValue(plan, 7, 17));
+        Assert.AreEqual("AND NOT", CellValue(plan, 11, 7));
+        Assert.AreEqual("COALESCE(tb1.上司ID, 0) = @manager_id", CellValue(plan, 12, 17));
+    }
+
+    /// <summary>
+    /// 日付計算の符号前後に入った空白を帳票上で正規化することを確認
+    /// </summary>
+    [TestMethod]
+    public void Build_NormalizesSpacedUnarySignInCondition()
+    {
+        const string sql = """
+            select
+                tb1.ユーザーID
+            from
+                users as tb1
+            where
+                tb1.作成日時 >= dateadd(day, - 30, @base_date)
+            """;
+
+        var plan = OutputSheetPlanBuilder.Build(sql, [new("tb1", "ユーザー", "", "")]);
+
+        Assert.AreEqual("tb1.作成日時 >= DATEADD(DAY, -30, @base_date)", CellValue(plan, 4, 17));
+    }
+
+    /// <summary>
     /// 複雑条件の外側括弧だけを独立行へ展開することを確認
     /// </summary>
     [TestMethod]
