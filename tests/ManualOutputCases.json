@@ -846,7 +846,6 @@
     {
       "id": "SEL-070",
       "title": "複合WHEN条件のCASE",
-      "review_status": "暫定確定（ユーザーレビュー未実施）",
       "sql_lines": [
         "select",
         "    case ",

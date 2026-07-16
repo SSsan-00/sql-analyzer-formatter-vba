@@ -78,7 +78,7 @@ SELECT INTO、INSERT SELECT、UPDATE、DELETEに実在するサブクエリ、CT
 WITH 句は名前付きサブクエリとして扱い、ネストしたサブクエリは内側から外側、最後にクエリ全体の順で出力します。
 無名サブクエリには出力順に `SQ1`、`SQ2` の名前を付けます。
 各表には参照テーブル、取得項目、条件、結合、並べ替えなど、文法に応じた解析結果を配置します。
-CASEはSELECT、集計関数、WHERE、HAVING、GROUP BY、ORDER BY、JOIN、TOP、OFFSET、UPDATE SET、INSERT VALUES内から検出し、WHEN、ELSE、ネストを複数行へ展開します。複合WHEN条件のANDとORも行単位に分けます。
+CASEはSELECT、集計関数、WHERE、HAVING、GROUP BY、ORDER BY、JOIN、TOP、OFFSET、UPDATE SET、INSERT VALUES内から検出し、WHEN、ELSE、ネストを複数行へ展開します。複合WHEN条件はANDとORを親列へ分け、条件本体を2列右へ下げて階層表示します。
 アウトプットは MS ゴシック 9 ポイント、列幅 1.14、行高 13.5、目盛り線なしで整形します。罫線は表本体だけを外枠で囲み、タイトル行と参照テーブル行は外枠に含めません。
 未対応のクエリは分解せず、SQL解析シートのB列と同じ和名変換後SQLをA列へ1行ずつ出力します。1行空けた末尾に`フォールバック原因`と、原因クエリがあるアウトプットシートの行範囲を表示します。
 更新系の移送表では、テーブル列を参照する式を`移送元`へ、変数・定数・テーブル列を参照しない関数を`移送方法ほか`へ出力します。
@@ -166,7 +166,7 @@ powershell -ExecutionPolicy Bypass -File tools/run-output-golden-tests.ps1
 `run-output-golden-tests.ps1`は本体モジュールと書式回帰テスト補助を取り込み、登録済み75ケースを比較します。
 保存済みの `SqlAnalysisFormatter.xlsm` にはテストモジュールを残しません。
 
-CRUDテストケースの内容は`tests/CRUD_TEST_CASES.md`、登録済み75出力ケースは`tests/OutputReportCases.json`と`tests/SqlAnalysisFormatter.OutputExpectations.xlsx`にまとめています。ユーザーレビュー待ちの15ケースは[暫定実装ケース](docs/PROVISIONAL_OUTPUT_CASES.md)で確認できます。
+CRUDテストケースの内容は`tests/CRUD_TEST_CASES.md`、登録済み75出力ケースは`tests/OutputReportCases.json`と`tests/SqlAnalysisFormatter.OutputExpectations.xlsx`にまとめています。ユーザーレビュー待ちの14ケースは[暫定実装ケース](docs/PROVISIONAL_OUTPUT_CASES.md)で確認できます。
 
 ### C# parser
 

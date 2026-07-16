@@ -144,7 +144,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\SqlAnalysisFormatter.u
 - 更新系では、テーブル列を参照する式を`移送元`へ、変数・定数・テーブル列を参照しない関数を`移送方法ほか`へ出力します。
 - INSERT SELECTのトップレベルSELECTにある計算式はデータ移送表の移送元または移送方法へ直接対応させ、JOIN、検索条件、グループ、集計条件は`＜DB入出力項目定義＞`へ出力します。
 - INSERT VALUESは対象列を明示した単一行に対応します。複数行、DEFAULT VALUES、INSERT EXECUTEは原因付きでフォールバックします。
-- CASEはSELECT項目、集計関数、WHERE、HAVING、GROUP BY、ORDER BY、JOIN、TOP、OFFSET、UPDATE SET、INSERT VALUES内で複数行へ展開します。列エイリアスのないSELECT項目は`CASE結果`として表示し、WHEN条件のANDとOR、THENまたはELSEにあるネストCASEも階層表示します。
+- CASEはSELECT項目、集計関数、WHERE、HAVING、GROUP BY、ORDER BY、JOIN、TOP、OFFSET、UPDATE SET、INSERT VALUES内で複数行へ展開します。列エイリアスのないSELECT項目は`CASE結果`として表示します。複合WHEN条件はANDとORを親列へ分け、条件本体を2列右へ下げます。THENまたはELSEにあるネストCASEも同様に階層表示します。
 - 罫線は取得項目、条件、結合、移送項目などの表本体だけを外枠で囲みます。タイトル行と参照テーブル行は外枠に含めません。
 
 ### SELECT INTOの項目を和名にする

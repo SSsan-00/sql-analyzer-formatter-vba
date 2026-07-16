@@ -359,7 +359,6 @@
     },
     {
       "id": "SEL-070",
-      "review_status": "暫定確定（ユーザーレビュー未実施）",
       "sql_lines": ["select", "    case ", "        when ( ", "            tb1.状態 = 'ACTIVE' ", "            and tb1.削除日時 is null", "        ) ", "            then 1 ", "        else 0 ", "        end as eligible_flag ", "from", "    users as tb1"],
       "tables": { "tb1": "ユーザー" }
     },

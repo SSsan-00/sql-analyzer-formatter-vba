@@ -611,6 +611,61 @@ public sealed class OutputSheetPlanBuilderTests
     }
 
     /// <summary>
+    /// 複合WHEN条件の条件本体を2列下げ、論理演算子と階層表示することを確認
+    /// </summary>
+    [TestMethod]
+    public void Build_IndentsCompoundCaseConditionsByTwoColumns()
+    {
+        const string sql = """
+            SELECT
+                CASE
+                    WHEN (
+                        tb1.状態 = 'ACTIVE'
+                        AND tb1.削除日時 IS NULL
+                    ) THEN 1
+                    ELSE 0
+                END AS eligible_flag
+            FROM
+                users AS tb1
+            """;
+
+        var plan = OutputSheetPlanBuilder.Build(sql, [new("tb1", "ユーザー", "", "")]);
+
+        Assert.AreEqual(5, plan.RowCount);
+        Assert.AreEqual("eligible_flag", CellValue(plan, 3, 17));
+        Assert.AreEqual("※", CellValue(plan, 3, 31));
+        Assert.IsNull(CellValue(plan, 3, 32));
+        Assert.AreEqual("tb1.状態 = 'ACTIVE'", CellValue(plan, 3, 34));
+        Assert.AreEqual("AND", CellValue(plan, 4, 32));
+        Assert.AreEqual("tb1.削除日時 IS NULL → 1", CellValue(plan, 4, 34));
+        Assert.AreEqual("それ以外 → 0", CellValue(plan, 5, 32));
+    }
+
+    /// <summary>
+    /// ORで結合した複合WHEN条件も論理演算子と条件本体を別列へ表示することを確認
+    /// </summary>
+    [TestMethod]
+    public void Build_SeparatesOrFromCompoundCaseConditions()
+    {
+        const string sql = """
+            SELECT
+                CASE
+                    WHEN tb1.状態 = 'PENDING' OR tb1.状態 = 'LOCKED' THEN 1
+                    ELSE 0
+                END AS review_flag
+            FROM
+                users AS tb1
+            """;
+
+        var plan = OutputSheetPlanBuilder.Build(sql, [new("tb1", "ユーザー", "", "")]);
+
+        Assert.AreEqual("tb1.状態 = 'PENDING'", CellValue(plan, 3, 34));
+        Assert.AreEqual("OR", CellValue(plan, 4, 32));
+        Assert.AreEqual("tb1.状態 = 'LOCKED' → 1", CellValue(plan, 4, 34));
+        Assert.AreEqual("それ以外 → 0", CellValue(plan, 5, 32));
+    }
+
+    /// <summary>
     /// GROUP BYのCASEを取得項目のエイリアスと分岐へ展開することを確認
     /// </summary>
     [TestMethod]
@@ -692,8 +747,9 @@ public sealed class OutputSheetPlanBuilderTests
         Assert.AreEqual(6, plan.RowCount);
         Assert.AreEqual("CASE結果 = 1", CellValue(plan, 4, 17));
         Assert.AreEqual("※", CellValue(plan, 4, 31));
-        Assert.AreEqual("tb1.状態 = 'ACTIVE'", CellValue(plan, 4, 32));
-        Assert.AreEqual("AND tb1.削除日時 IS NULL → 1", CellValue(plan, 5, 32));
+        Assert.AreEqual("tb1.状態 = 'ACTIVE'", CellValue(plan, 4, 34));
+        Assert.AreEqual("AND", CellValue(plan, 5, 32));
+        Assert.AreEqual("tb1.削除日時 IS NULL → 1", CellValue(plan, 5, 34));
         Assert.AreEqual("それ以外 → 0", CellValue(plan, 6, 32));
     }
 
@@ -920,8 +976,9 @@ public sealed class OutputSheetPlanBuilderTests
         Assert.AreEqual(7, plan.RowCount);
         Assert.AreEqual("CASE結果 = tb2.対象ユーザーID", CellValue(plan, 5, 17));
         Assert.AreEqual("※", CellValue(plan, 5, 31));
-        Assert.AreEqual("tb1.状態 = 'ACTIVE'", CellValue(plan, 5, 32));
-        Assert.AreEqual("AND tb2.有効区分 = 1 → tb1.ユーザーID", CellValue(plan, 6, 32));
+        Assert.AreEqual("tb1.状態 = 'ACTIVE'", CellValue(plan, 5, 34));
+        Assert.AreEqual("AND", CellValue(plan, 6, 32));
+        Assert.AreEqual("tb2.有効区分 = 1 → tb1.ユーザーID", CellValue(plan, 6, 34));
         Assert.AreEqual("それ以外 → 0", CellValue(plan, 7, 32));
     }
 
@@ -1593,8 +1650,9 @@ public sealed class OutputSheetPlanBuilderTests
         Assert.AreEqual("状態", CellValue(plan, 4, 1));
         Assert.AreEqual("CASE結果", CellValue(plan, 4, 19));
         Assert.AreEqual("※", CellValue(plan, 4, 35));
-        Assert.AreEqual("tb1.削除日時 IS NULL", CellValue(plan, 4, 37));
-        Assert.AreEqual("AND tb1.有効区分 = 1 → 'ACTIVE'", CellValue(plan, 5, 37));
+        Assert.AreEqual("tb1.削除日時 IS NULL", CellValue(plan, 4, 39));
+        Assert.AreEqual("AND", CellValue(plan, 5, 37));
+        Assert.AreEqual("tb1.有効区分 = 1 → 'ACTIVE'", CellValue(plan, 5, 39));
         Assert.AreEqual("それ以外 → 'INACTIVE'", CellValue(plan, 6, 37));
     }
 

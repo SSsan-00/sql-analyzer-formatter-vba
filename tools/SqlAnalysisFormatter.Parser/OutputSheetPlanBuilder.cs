@@ -1104,16 +1104,31 @@ public static class OutputSheetPlanBuilder
         foreach (var clause in expression.WhenClauses)
         {
             var conditions = FlattenBooleanExpression(UnwrapCaseCondition(clause.WhenExpression));
+            var isCompoundCondition = conditions.Count > 1;
+            var conditionColumn = isCompoundCondition ? column + 2 : column;
             for (var index = 0; index < conditions.Count - 1; index++)
             {
                 var part = conditions[index];
-                var prefix = part.Connector.Length == 0 ? string.Empty : part.Connector + " ";
-                cells.Add(new OutputCell(row, column, prefix + ConditionDisplayText(sql, part.Expression)));
+                if (isCompoundCondition && part.Connector.Length > 0)
+                {
+                    cells.Add(new OutputCell(row, column, part.Connector));
+                }
+                var prefix = isCompoundCondition || part.Connector.Length == 0
+                    ? string.Empty
+                    : part.Connector + " ";
+                cells.Add(new OutputCell(
+                    row,
+                    conditionColumn,
+                    prefix + ConditionDisplayText(sql, part.Expression)));
                 row++;
             }
 
             var finalCondition = conditions[^1];
-            var finalPrefix = finalCondition.Connector.Length == 0
+            if (isCompoundCondition && finalCondition.Connector.Length > 0)
+            {
+                cells.Add(new OutputCell(row, column, finalCondition.Connector));
+            }
+            var finalPrefix = isCompoundCondition || finalCondition.Connector.Length == 0
                 ? string.Empty
                 : finalCondition.Connector + " ";
             row = WriteCaseResultLine(
@@ -1122,7 +1137,7 @@ public static class OutputSheetPlanBuilder
                 finalPrefix + ConditionDisplayText(sql, finalCondition.Expression),
                 clause.ThenExpression,
                 row,
-                column);
+                conditionColumn);
         }
 
         if (expression.ElseExpression is not null)
