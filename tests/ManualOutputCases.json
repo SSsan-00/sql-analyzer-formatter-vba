@@ -800,6 +800,72 @@
         { "table_id": "tb2", "table_name_ja": "注文", "field_id": "user_id", "field_name_ja": "注文ユーザーID" },
         { "table_id": "tb2", "table_name_ja": "注文", "field_id": "created_at", "field_name_ja": "注文日時" }
       ]
+    },
+    {
+      "id": "SEL-068",
+      "title": "SUM内のCASE",
+      "review_status": "暫定確定（ユーザーレビュー未実施）",
+      "sql_lines": [
+        "select",
+        "    sum( ",
+        "        case ",
+        "            when tb1.status = 'PAID' ",
+        "                then tb1.amount ",
+        "            else 0 ",
+        "            end",
+        "    ) as paid_amount ",
+        "from",
+        "    orders as tb1"
+      ],
+      "definitions": [
+        { "table_id": "tb1", "table_name_ja": "注文", "field_id": "status", "field_name_ja": "状態" },
+        { "table_id": "tb1", "table_name_ja": "注文", "field_id": "amount", "field_name_ja": "金額" }
+      ]
+    },
+    {
+      "id": "SEL-069",
+      "title": "ELSE内のネストCASE",
+      "review_status": "暫定確定（ユーザーレビュー未実施）",
+      "sql_lines": [
+        "select",
+        "    case ",
+        "        when tb1.status = 'ACTIVE' ",
+        "            then 'ENABLED' ",
+        "        else case ",
+        "            when tb1.deleted_at is null ",
+        "                then 'PENDING' ",
+        "            else 'DISABLED' ",
+        "            end ",
+        "        end as user_status ",
+        "from",
+        "    users as tb1"
+      ],
+      "definitions": [
+        { "table_id": "tb1", "table_name_ja": "ユーザー", "field_id": "status", "field_name_ja": "状態" },
+        { "table_id": "tb1", "table_name_ja": "ユーザー", "field_id": "deleted_at", "field_name_ja": "削除日時" }
+      ]
+    },
+    {
+      "id": "SEL-070",
+      "title": "複合WHEN条件のCASE",
+      "review_status": "暫定確定（ユーザーレビュー未実施）",
+      "sql_lines": [
+        "select",
+        "    case ",
+        "        when ( ",
+        "            tb1.status = 'ACTIVE' ",
+        "            and tb1.deleted_at is null",
+        "        ) ",
+        "            then 1 ",
+        "        else 0 ",
+        "        end as eligible_flag ",
+        "from",
+        "    users as tb1"
+      ],
+      "definitions": [
+        { "table_id": "tb1", "table_name_ja": "ユーザー", "field_id": "status", "field_name_ja": "状態" },
+        { "table_id": "tb1", "table_name_ja": "ユーザー", "field_id": "deleted_at", "field_name_ja": "削除日時" }
+      ]
     }
   ]
 }
