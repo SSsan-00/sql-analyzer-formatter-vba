@@ -42,6 +42,12 @@ powershell -ExecutionPolicy Bypass -File tools/run-output-golden-tests.ps1 -Meas
 書式は`SqlAnalysisFormatterGoldenTests.bas`によりExcel内部で比較します。最初のケースでは意図的な書式差分を検知できることも自己診断します。
 機能追加は、失敗するテストを先に追加し、最小実装で成功させ、全回帰テストを維持したまま整理する TDD サイクルで進めます。
 
+利用者レビューでセル値が確定した後、共通フレームの書式だけを期待値へ反映する場合は、対象ケースを明示して次を実行します。値が一致しないケースは更新せず失敗します。
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools/run-output-golden-tests.ps1 -CaseId SEL-048,SEL-049 -RefreshFormats
+```
+
 `test-bootstrap.ps1`は、ユーザー向けREADMEに導入、初回セットアップ、トラブル対応の各セクションが含まれることも確認します。
 利用手順を変更した場合は、`README.md`と`docs/USER_GUIDE.md`を同時に更新します。
 

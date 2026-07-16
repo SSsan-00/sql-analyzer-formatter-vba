@@ -1,7 +1,8 @@
 ﻿param(
     [string]$ParserExePath = 'dist\parser\SqlAnalysisFormatter.Parser.exe',
-    [string]$CaseId = '',
-    [switch]$MeasurePerformance
+    [string[]]$CaseId = @(),
+    [switch]$MeasurePerformance,
+    [switch]$RefreshFormats
 )
 
 $ErrorActionPreference = 'Stop'
@@ -50,10 +51,10 @@ function Assert-Equal {
 Copy-Item -LiteralPath $workbookPath -Destination $tempWorkbookPath -Force
 $fixture = Get-Content -LiteralPath $fixturePath -Encoding UTF8 -Raw | ConvertFrom-Json
 $testCases = @($fixture.cases)
-if (-not [string]::IsNullOrWhiteSpace($CaseId)) {
-    $testCases = @($testCases | Where-Object id -eq $CaseId)
+if ($CaseId.Count -gt 0) {
+    $testCases = @($testCases | Where-Object { $_.id -in $CaseId })
     if ($testCases.Count -eq 0) {
-        throw "Output case not found: $CaseId"
+        throw "Output case not found: $($CaseId -join ', ')"
     }
 }
 $excel = New-Object -ComObject Excel.Application
@@ -63,7 +64,7 @@ $excel.AutomationSecurity = 1
 
 try {
     $workbook = $excel.Workbooks.Open($tempWorkbookPath)
-    $expectationBook = $excel.Workbooks.Open($expectationPath, 0, $true)
+    $expectationBook = $excel.Workbooks.Open($expectationPath, 0, -not $RefreshFormats)
     $excel.ScreenUpdating = $false
     $excel.EnableEvents = $false
     $excel.Calculation = -4135
@@ -106,6 +107,14 @@ try {
             $definitionSheet.Cells.Item($definitionRow, 4).Value2 = '未使用'
             $definitionRow++
         }
+        $outputFieldProperties = @($testCase.output_fields.PSObject.Properties)
+        foreach ($field in $outputFieldProperties) {
+            $definitionSheet.Cells.Item($definitionRow, 1).Value2 = '-'
+            $definitionSheet.Cells.Item($definitionRow, 2).Value2 = ''
+            $definitionSheet.Cells.Item($definitionRow, 3).Value2 = [string]$field.Name
+            $definitionSheet.Cells.Item($definitionRow, 4).Value2 = [string]$field.Value
+            $definitionRow++
+        }
 
         $sqlRow = 2
         foreach ($line in $testCase.sql_lines) {
@@ -136,31 +145,42 @@ try {
         $phaseMilliseconds.Values += $phaseTimer.Elapsed.TotalMilliseconds
 
         $phaseTimer.Restart()
-        $formatFailure = [string]$excel.Run(
-            "'$tempWorkbookPath'!CompareOutputGoldenFormat",
-            [string]$testCase.id,
-            $expectationBookName,
-            [string]$testCase.id,
-            $outputSheetName,
-            [int]$expectedRowCount,
-            [bool]($caseIndex -eq 1))
-        if (-not [string]::IsNullOrEmpty($formatFailure)) {
-            throw $formatFailure
-        }
-        if ($caseIndex -eq 1) {
-            $originalWrapText = $outputSheet.Cells.Item(1, 1).WrapText
-            $outputSheet.Cells.Item(1, 1).WrapText = -not [bool]$originalWrapText
-            $comparatorSelfTest = [string]$excel.Run(
+        if ($RefreshFormats) {
+            $actualRange.Copy() | Out-Null
+            $expectedRange.PasteSpecial(-4122) | Out-Null
+            for ($row = 1; $row -le $expectedRowCount; $row++) {
+                $expectedSheet.Rows.Item($row).RowHeight = $outputSheet.Rows.Item($row).RowHeight
+            }
+            for ($column = 1; $column -le 90; $column++) {
+                $expectedSheet.Columns.Item($column).ColumnWidth = $outputSheet.Columns.Item($column).ColumnWidth
+            }
+        } else {
+            $formatFailure = [string]$excel.Run(
                 "'$tempWorkbookPath'!CompareOutputGoldenFormat",
                 [string]$testCase.id,
                 $expectationBookName,
                 [string]$testCase.id,
                 $outputSheetName,
                 [int]$expectedRowCount,
-                $false)
-            $outputSheet.Cells.Item(1, 1).WrapText = $originalWrapText
-            if ($comparatorSelfTest -notlike "*$($testCase.id) A1 wrap*") {
-                throw "Output format comparator did not detect the intentional mismatch."
+                [bool]($caseIndex -eq 1))
+            if (-not [string]::IsNullOrEmpty($formatFailure)) {
+                throw $formatFailure
+            }
+            if ($caseIndex -eq 1) {
+                $originalWrapText = $outputSheet.Cells.Item(1, 1).WrapText
+                $outputSheet.Cells.Item(1, 1).WrapText = -not [bool]$originalWrapText
+                $comparatorSelfTest = [string]$excel.Run(
+                    "'$tempWorkbookPath'!CompareOutputGoldenFormat",
+                    [string]$testCase.id,
+                    $expectationBookName,
+                    [string]$testCase.id,
+                    $outputSheetName,
+                    [int]$expectedRowCount,
+                    $false)
+                $outputSheet.Cells.Item(1, 1).WrapText = $originalWrapText
+                if ($comparatorSelfTest -notlike "*$($testCase.id) A1 wrap*") {
+                    throw "Output format comparator did not detect the intentional mismatch."
+                }
             }
         }
         $phaseMilliseconds.Formats += $phaseTimer.Elapsed.TotalMilliseconds
@@ -173,7 +193,12 @@ try {
         }
     }
 
-    Write-Output ("Output golden tests passed: {0} cases." -f $testCases.Count)
+    if ($RefreshFormats) {
+        $expectationBook.Save()
+        Write-Output ("Output golden formats refreshed: {0} cases." -f $testCases.Count)
+    } else {
+        Write-Output ("Output golden tests passed: {0} cases." -f $testCases.Count)
+    }
     if ($MeasurePerformance) {
         $totalTimer.Stop()
         foreach ($phase in $phaseMilliseconds.GetEnumerator()) {
