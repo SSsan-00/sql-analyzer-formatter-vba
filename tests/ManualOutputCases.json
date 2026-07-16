@@ -2,7 +2,7 @@
   "dialect": "T-SQL",
   "formatter": {
     "name": "A5:SQL Mk-2",
-    "version": "2.21.1",
+    "version": "2.21.2",
     "command": "Ctrl+Q"
   },
   "cases": [
@@ -156,6 +156,7 @@
     {
       "id": "SEL-045",
       "title": "INSERT SELECT",
+      "review_status": "暫定確定（ハイブリッド出力はユーザーレビュー未実施）",
       "sql_lines": [
         "insert ",
         "into user_archive(user_id, name, status) ",
@@ -456,6 +457,7 @@
     {
       "id": "SEL-056",
       "title": "拡張INSERT SELECT",
+      "review_status": "暫定確定（ハイブリッド出力はユーザーレビュー未実施）",
       "sql_lines": [
         "insert ",
         "into user_summary(user_id, display_name, order_count, created_at, source_type) ",
@@ -558,6 +560,26 @@
       ]
     },
     {
+      "id": "SEL-060",
+      "title": "INSERT VALUES",
+      "review_status": "暫定確定（ユーザーレビュー未実施）",
+      "sql_lines": [
+        "insert ",
+        "into users(user_id, name, status, created_at) ",
+        "values (@user_id, @name, 'ACTIVE', sysdatetime())"
+      ],
+      "definitions": [
+        { "table_id": "users", "table_name_ja": "ユーザー", "field_id": "user_id", "field_name_ja": "ユーザーID" },
+        { "table_id": "users", "table_name_ja": "ユーザー", "field_id": "name", "field_name_ja": "氏名" },
+        { "table_id": "users", "table_name_ja": "ユーザー", "field_id": "status", "field_name_ja": "状態" },
+        { "table_id": "users", "table_name_ja": "ユーザー", "field_id": "created_at", "field_name_ja": "作成日時" },
+        { "table_id": "-", "table_name_ja": "ユーザー", "field_id": "user_id", "field_name_ja": "ユーザーID" },
+        { "table_id": "-", "table_name_ja": "ユーザー", "field_id": "name", "field_name_ja": "氏名" },
+        { "table_id": "-", "table_name_ja": "ユーザー", "field_id": "status", "field_name_ja": "状態" },
+        { "table_id": "-", "table_name_ja": "ユーザー", "field_id": "created_at", "field_name_ja": "作成日時" }
+      ]
+    },
+    {
       "id": "SEL-061",
       "title": "CASEを含む複雑なSELECT INTO",
       "sql_lines": [
@@ -609,6 +631,93 @@
         { "table_id": "tb2", "table_name_ja": "注文", "field_id": "order_id", "field_name_ja": "注文ID" },
         { "table_id": "tb2", "table_name_ja": "注文", "field_id": "user_id", "field_name_ja": "注文ユーザーID" },
         { "table_id": "tb2", "table_name_ja": "注文", "field_id": "status", "field_name_ja": "状態" }
+      ]
+    },
+    {
+      "id": "SEL-062",
+      "title": "UPDATE SET内のサブクエリ",
+      "review_status": "暫定確定（ユーザーレビュー未実施）",
+      "sql_lines": [
+        "update tb1 ",
+        "set",
+        "    last_order_amount = ( ",
+        "        select",
+        "            top(1) tb2.amount ",
+        "        from",
+        "            orders as tb2 ",
+        "        where",
+        "            tb2.user_id = tb1.user_id ",
+        "        order by",
+        "            tb2.created_at desc",
+        "    ) ",
+        "from",
+        "    users as tb1 ",
+        "where",
+        "    tb1.status = 'ACTIVE'"
+      ],
+      "definitions": [
+        { "table_id": "-", "table_name_ja": "ユーザー", "field_id": "last_order_amount", "field_name_ja": "最終注文金額" },
+        { "table_id": "tb1", "table_name_ja": "ユーザー", "field_id": "user_id", "field_name_ja": "ユーザーID" },
+        { "table_id": "tb1", "table_name_ja": "ユーザー", "field_id": "status", "field_name_ja": "状態" },
+        { "table_id": "tb2", "table_name_ja": "注文", "field_id": "amount", "field_name_ja": "金額" },
+        { "table_id": "tb2", "table_name_ja": "注文", "field_id": "user_id", "field_name_ja": "注文ユーザーID" },
+        { "table_id": "tb2", "table_name_ja": "注文", "field_id": "created_at", "field_name_ja": "注文日時" }
+      ]
+    },
+    {
+      "id": "SEL-063",
+      "title": "派生SELECT付きUPDATE",
+      "review_status": "暫定確定（ユーザーレビュー未実施）",
+      "sql_lines": [
+        "update tb1 ",
+        "set",
+        "    status = sq.latest_status ",
+        "from",
+        "    users as tb1 ",
+        "    inner join ( ",
+        "        select",
+        "            tb2.user_id",
+        "            , max(tb2.status) as latest_status ",
+        "        from",
+        "            order_status_history as tb2 ",
+        "        group by",
+        "            tb2.user_id",
+        "    ) as sq ",
+        "        on tb1.user_id = sq.user_id ",
+        "where",
+        "    tb1.status = 'ACTIVE'"
+      ],
+      "definitions": [
+        { "table_id": "-", "table_name_ja": "ユーザー", "field_id": "status", "field_name_ja": "状態" },
+        { "table_id": "tb1", "table_name_ja": "ユーザー", "field_id": "user_id", "field_name_ja": "ユーザーID" },
+        { "table_id": "tb1", "table_name_ja": "ユーザー", "field_id": "status", "field_name_ja": "状態" },
+        { "table_id": "tb2", "table_name_ja": "注文状態履歴", "field_id": "user_id", "field_name_ja": "注文ユーザーID" },
+        { "table_id": "tb2", "table_name_ja": "注文状態履歴", "field_id": "status", "field_name_ja": "状態" },
+        { "table_id": "sq", "table_name_ja": "(和名未取得)", "field_id": "user_id", "field_name_ja": "注文ユーザーID" },
+        { "table_id": "sq", "table_name_ja": "(和名未取得)", "field_id": "latest_status", "field_name_ja": "最新状態" }
+      ]
+    },
+    {
+      "id": "SEL-064",
+      "title": "EXISTS付きDELETE",
+      "review_status": "暫定確定（ユーザーレビュー未実施）",
+      "sql_lines": [
+        "delete tb1 ",
+        "from",
+        "    users as tb1 ",
+        "where",
+        "    exists ( ",
+        "        select",
+        "            1 ",
+        "        from",
+        "            orders as tb2 ",
+        "        where",
+        "            tb2.user_id = tb1.user_id",
+        "    )"
+      ],
+      "definitions": [
+        { "table_id": "tb1", "table_name_ja": "ユーザー", "field_id": "user_id", "field_name_ja": "ユーザーID" },
+        { "table_id": "tb2", "table_name_ja": "注文", "field_id": "user_id", "field_name_ja": "注文ユーザーID" }
       ]
     }
   ]

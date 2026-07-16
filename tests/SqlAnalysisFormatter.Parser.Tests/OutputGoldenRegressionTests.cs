@@ -7,16 +7,16 @@ using SqlAnalysisFormatter.Parser;
 namespace SqlAnalysisFormatter.Parser.Tests;
 
 /// <summary>
-/// レビュー済みExcel期待値47件との回帰テスト
+/// 登録済みExcel期待値64件との回帰テスト
 /// </summary>
 [TestClass]
 public sealed class OutputGoldenRegressionTests
 {
     /// <summary>
-    /// 全47ケースがレビュー済み期待値と一致することを確認
+    /// 全64ケースが登録済み期待値と一致することを確認
     /// </summary>
     [TestMethod]
-    public void Build_MatchesAllReviewedExpectations()
+    public void Build_MatchesAllRegisteredExpectations()
     {
         var fixture = LoadFixture();
         using var workbook = new OutputExpectationWorkbook(
