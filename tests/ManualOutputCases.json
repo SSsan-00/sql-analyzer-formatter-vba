@@ -634,7 +634,6 @@
     {
       "id": "SEL-062",
       "title": "UPDATE SET内のサブクエリ",
-      "review_status": "暫定確定（ユーザーレビュー未実施）",
       "sql_lines": [
         "update tb1 ",
         "set",

@@ -309,7 +309,6 @@
     },
     {
       "id": "SEL-062",
-      "review_status": "暫定確定（ユーザーレビュー未実施）",
       "sql_lines": ["update tb1 ", "set", "    最終注文金額 = ( ", "        select", "            top(1) tb2.金額 ", "        from", "            orders as tb2 ", "        where", "            tb2.注文ユーザーID = tb1.ユーザーID ", "        order by", "            tb2.注文日時 desc", "    ) ", "from", "    users as tb1 ", "where", "    tb1.状態 = 'ACTIVE'"],
       "tables": { "tb1": "ユーザー", "tb2": "注文" },
       "output_fields": { "last_order_amount": "最終注文金額" }
