@@ -62,19 +62,7 @@ public static class OutputSheetPlanBuilder
             return BuildSelectIntoStatement(sql, selectStatement, intoQuery, mappings);
         }
 
-        var subqueries = SubqueryCollector.Collect(selectStatement);
-        var plans = new List<OutputSheetPlan>();
-        foreach (var subquery in subqueries)
-        {
-            var children = DirectChildSubqueries(subquery.QueryExpression, subqueries);
-            var plan = BuildQueryExpression(
-                sql,
-                subquery.QueryExpression,
-                mappings,
-                $"サブクエリ[{subquery.Name}]",
-                children.Where(child => !child.IsNamed).Select(child => child.Name));
-            plans.Add(ReplaceSubqueries(plan, sql, children));
-        }
+        var (subqueries, plans) = BuildLeadingSubqueryPlans(sql, selectStatement, mappings);
 
         var wholeChildren = DirectChildSubqueries(selectStatement.QueryExpression, subqueries);
         var wholePlan = BuildQueryExpression(
@@ -97,19 +85,7 @@ public static class OutputSheetPlanBuilder
         QuerySpecification sourceQuery,
         IReadOnlyList<MappingDefinition> mappings)
     {
-        var subqueries = SubqueryCollector.Collect(statement);
-        var plans = new List<OutputSheetPlan>();
-        foreach (var subquery in subqueries)
-        {
-            var children = DirectChildSubqueries(subquery.QueryExpression, subqueries);
-            var plan = BuildQueryExpression(
-                sql,
-                subquery.QueryExpression,
-                mappings,
-                $"サブクエリ[{subquery.Name}]",
-                children.Where(child => !child.IsNamed).Select(child => child.Name));
-            plans.Add(ReplaceSubqueries(plan, sql, children));
-        }
+        var (subqueries, plans) = BuildLeadingSubqueryPlans(sql, statement, mappings);
 
         var sourceName = $"SQ{subqueries.Count + 1}";
         var sourceChildren = DirectChildSubqueries(sourceQuery, subqueries);
@@ -143,6 +119,32 @@ public static class OutputSheetPlanBuilder
             mappings));
 
         return CombinePlans(plans);
+    }
+
+    /// <summary>
+    /// SELECT文内のサブクエリを内側から共通の描画計画へ変換
+    /// </summary>
+    private static (IReadOnlyList<SubqueryInfo> Subqueries, List<OutputSheetPlan> Plans)
+        BuildLeadingSubqueryPlans(
+            string sql,
+            SelectStatement statement,
+            IReadOnlyList<MappingDefinition> mappings)
+    {
+        var subqueries = SubqueryCollector.Collect(statement);
+        var plans = new List<OutputSheetPlan>(subqueries.Count + 1);
+        foreach (var subquery in subqueries)
+        {
+            var children = DirectChildSubqueries(subquery.QueryExpression, subqueries);
+            var plan = BuildQueryExpression(
+                sql,
+                subquery.QueryExpression,
+                mappings,
+                $"サブクエリ[{subquery.Name}]",
+                children.Where(child => !child.IsNamed).Select(child => child.Name));
+            plans.Add(ReplaceSubqueries(plan, sql, children));
+        }
+
+        return (subqueries, plans);
     }
 
     /// <summary>
