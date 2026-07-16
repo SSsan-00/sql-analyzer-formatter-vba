@@ -719,7 +719,6 @@
     {
       "id": "SEL-065",
       "title": "UPDATE検索条件のEXISTS",
-      "review_status": "暫定確定（ユーザーレビュー未実施）",
       "sql_lines": [
         "update users ",
         "set",

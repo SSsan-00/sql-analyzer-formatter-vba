@@ -327,7 +327,6 @@
     },
     {
       "id": "SEL-065",
-      "review_status": "暫定確定（ユーザーレビュー未実施）",
       "sql_lines": ["update users ", "set", "    状態 = 'INACTIVE' ", "where", "    exists ( ", "        select", "            1 ", "        from", "            orders as tb2 ", "        where", "            tb2.注文ユーザーID = users.ユーザーID ", "            and tb2.状態 = 'CANCELLED'", "    )"],
       "tables": { "users": "ユーザー", "tb2": "注文" }
     },
