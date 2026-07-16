@@ -69,6 +69,7 @@ try {
         'AnalyzeQueries_HandlesSyntaxCharactersInFieldNames',
         'AnalyzeQueries_UsesStandaloneTableNameForSingleTable',
         'AnalyzeQueries_WritesUnsupportedQueryAsIs',
+        'AnalyzeQueries_FramesOnlyTableBody',
         'ClearData_ClearsOutputSheet'
     )
     if ($TestName.Count -gt 0) {

@@ -125,13 +125,14 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\SqlAnalysisFormatter.u
 | --- | --- |
 | SELECT | `＜DB入出力項目定義＞` |
 | サブクエリ、WITH | `サブクエリ[名前]` |
-| SELECT INTO | `サブクエリ[SQn]`、`＜DB入出力項目定義＞`、`＜データ移送表＞` |
+| SELECT INTO | 実在する`サブクエリ[名前]`、`＜DB入出力項目定義＞`、`＜データ移送表＞` |
 | INSERT VALUES | `＜データ移送表＞` |
-| INSERT SELECT | `サブクエリ[SQn]`、`＜データ移送表＞` |
+| INSERT SELECT | 実在する`サブクエリ[名前]`、`＜DB入出力項目定義＞`、`＜データ移送表＞` |
 | SELECTを含まないDELETE、UPDATE | `＜データ移送表＞` |
 | SELECTを含むDELETE、UPDATE | 内側の`サブクエリ[名前]`、`＜データ移送表＞` |
 
-- SELECT INTOはクエリの複雑度にかかわらず、上記3表をこの順で出力します。
+- SELECT INTOとINSERT SELECTのトップレベルSELECTは人工的なサブクエリへ分けず、`＜DB入出力項目定義＞`へ出力します。各取得式はデータ移送表の同じ位置にある対象項目へ直接対応させます。
+- SELECT INTOとINSERT SELECT内に実在するサブクエリ、CTE、派生テーブルは、トップレベルSELECTより先に`サブクエリ[名前]`として出力します。
 - 更新系SQLにSELECT処理が含まれる場合は、SELECTの解析表を先、最終的なデータ移送表を後に出力します。
 - UPDATEの検索条件に`EXISTS`、`IN (SELECT ...)`、比較用サブクエリがある場合も、SELECTを`サブクエリ[SQn]`へ分け、データ移送表の検索条件からSQ名で参照します。
 - FROM句がないUPDATEでも、更新対象テーブルをデータ移送表の参照テーブルへ表示します。
@@ -141,9 +142,10 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\SqlAnalysisFormatter.u
 - 未対応のSQLは、SQL解析シートのB列と同じ和名変換後SQLをA列へ1行ずつ出力します。
 - フォールバック時は1行空けた末尾へ`フォールバック原因`と、原因クエリがあるアウトプットシートの行範囲を表示します。
 - 更新系では、テーブル列を参照する式を`移送元`へ、変数・定数・テーブル列を参照しない関数を`移送方法ほか`へ出力します。
-- INSERT SELECTの計算式、JOIN、検索条件、集計条件は先行する`サブクエリ[SQn]`へ出力し、データ移送表は`SQn.項目名`を移送元にします。
+- INSERT SELECTのトップレベルSELECTにある計算式はデータ移送表の移送元または移送方法へ直接対応させ、JOIN、検索条件、グループ、集計条件は`＜DB入出力項目定義＞`へ出力します。
 - INSERT VALUESは対象列を明示した単一行に対応します。複数行、DEFAULT VALUES、INSERT EXECUTEは原因付きでフォールバックします。
 - CASEはSELECT項目、集計関数、WHERE、HAVING、GROUP BY、ORDER BY、JOIN、TOP、OFFSET、UPDATE SET、INSERT VALUES内で複数行へ展開します。列エイリアスのないSELECT項目は`CASE結果`として表示し、WHEN条件のANDとOR、THENまたはELSEにあるネストCASEも階層表示します。
+- 罫線は取得項目、条件、結合、移送項目などの表本体だけを外枠で囲みます。タイトル行と参照テーブル行は外枠に含めません。
 
 ### SELECT INTOの項目を和名にする
 

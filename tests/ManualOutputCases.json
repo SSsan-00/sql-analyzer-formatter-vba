@@ -156,7 +156,6 @@
     {
       "id": "SEL-045",
       "title": "INSERT SELECT",
-      "review_status": "暫定確定（ハイブリッド出力はユーザーレビュー未実施）",
       "sql_lines": [
         "insert ",
         "into user_archive(user_id, name, status) ",
@@ -457,7 +456,6 @@
     {
       "id": "SEL-056",
       "title": "拡張INSERT SELECT",
-      "review_status": "暫定確定（ハイブリッド出力はユーザーレビュー未実施）",
       "sql_lines": [
         "insert ",
         "into user_summary(user_id, display_name, order_count, created_at, source_type) ",

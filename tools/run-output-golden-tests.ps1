@@ -48,6 +48,26 @@ function Assert-Equal {
     }
 }
 
+# 値一致確認済みの範囲をコピー先指定で反映し、Excelの貼り付け失敗を吸収する
+function Copy-VerifiedRange {
+    param(
+        [object]$SourceRange,
+        [object]$TargetRange
+    )
+
+    for ($attempt = 1; $attempt -le 5; $attempt++) {
+        try {
+            $SourceRange.Copy($TargetRange) | Out-Null
+            return
+        } catch {
+            if ($attempt -eq 5) {
+                throw
+            }
+            Start-Sleep -Milliseconds (250 * $attempt)
+        }
+    }
+}
+
 Copy-Item -LiteralPath $workbookPath -Destination $tempWorkbookPath -Force
 $fixture = Get-Content -LiteralPath $fixturePath -Encoding UTF8 -Raw | ConvertFrom-Json
 $testCases = @($fixture.cases)
@@ -146,8 +166,7 @@ try {
 
         $phaseTimer.Restart()
         if ($RefreshFormats) {
-            $actualRange.Copy() | Out-Null
-            $expectedRange.PasteSpecial(-4122) | Out-Null
+            Copy-VerifiedRange $actualRange $expectedRange
             for ($row = 1; $row -le $expectedRowCount; $row++) {
                 $expectedSheet.Rows.Item($row).RowHeight = $outputSheet.Rows.Item($row).RowHeight
             }

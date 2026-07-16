@@ -933,7 +933,8 @@ Private Sub ApplyOutputSectionStyle( _
 
     Select Case UCase$(sectionKind)
         Case "REFERENCE"
-            ApplyBottomBorder ws.Range(ws.Cells(startRow, 1), ws.Cells(endRow, OUTPUT_LAST_COLUMN))
+            ' タイトルと参照テーブル行は表の外側として扱う
+            ws.Range(ws.Cells(startRow, 1), ws.Cells(endRow, OUTPUT_LAST_COLUMN)).Borders.LineStyle = xlNone
         Case "STANDARD"
             ApplyFilledFrame ws.Range(ws.Cells(startRow, 1), ws.Cells(endRow, 6)), OUTPUT_FILL_COLOR
             ApplyFilledFrame ws.Range(ws.Cells(startRow, 7), ws.Cells(endRow, OUTPUT_LAST_COLUMN)), vbWhite
@@ -1000,7 +1001,7 @@ Private Sub ApplyOuterBorder(ByVal targetRange As Range)
     Next borderIndex
 End Sub
 
-' 参照テーブル行へ下罫線を設定
+' データ移送表の見出し行へ下罫線を設定
 Private Sub ApplyBottomBorder(ByVal targetRange As Range)
     With targetRange.Borders(xlEdgeBottom)
         .LineStyle = xlContinuous

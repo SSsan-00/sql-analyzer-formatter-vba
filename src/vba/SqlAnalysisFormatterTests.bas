@@ -22,6 +22,7 @@ Public Sub RunAllSqlAnalysisFormatterTests(Optional ByVal showMessage As Boolean
     AnalyzeQueries_HandlesSyntaxCharactersInFieldNames
     AnalyzeQueries_UsesStandaloneTableNameForSingleTable
     AnalyzeQueries_WritesUnsupportedQueryAsIs
+    AnalyzeQueries_FramesOnlyTableBody
     ClearData_ClearsOutputSheet
 
     If showMessage Then
@@ -34,6 +35,38 @@ TestFail:
         MsgBox Err.Description, vbCritical
     End If
     Err.Raise Err.Number, Err.Source, Err.Description
+End Sub
+
+'@TestMethod("AnalyzeQueries")
+' 表本体がない場合にタイトルと参照テーブル行へ罫線を付けないことを確認
+Public Sub AnalyzeQueries_FramesOnlyTableBody()
+    Dim wsRef As Worksheet
+    Dim wsSql As Worksheet
+    Dim wsOutput As Worksheet
+
+    If Not ExternalParserConfigured() Then Exit Sub
+
+    SetupWorkbook
+    Set wsRef = ThisWorkbook.Worksheets(ReferenceSheetName())
+    Set wsSql = ThisWorkbook.Worksheets(SqlSheetName())
+    Set wsOutput = ThisWorkbook.Worksheets(OutputSheetName())
+
+    wsRef.Range("A2:D200").ClearContents
+    wsSql.Range("A2:Z200").ClearContents
+    wsOutput.Cells.ClearContents
+    ' 前のテストが残した表本体の上罫線だけを初期化する
+    wsOutput.Range("A1:CL200").Borders.LineStyle = xlNone
+    PutDefinition wsRef, 2, "users", UserTableText(), "user_id", UserIdText()
+    wsSql.Cells(2, COL_SQL).Value = "DELETE FROM users"
+
+    AnalyzeQueries False
+
+    AssertCellValue wsOutput.Cells(1, 1), DataTransferTitle()
+    AssertCellValue wsOutput.Cells(2, 1), ReferenceTablesText() & ": " & UserTableText() & "[users]"
+    AssertCellHasNoEdgeBorders wsOutput.Cells(1, 1)
+    AssertCellHasNoEdgeBorders wsOutput.Cells(1, 90)
+    AssertCellHasNoEdgeBorders wsOutput.Cells(2, 1)
+    AssertCellHasNoEdgeBorders wsOutput.Cells(2, 90)
 End Sub
 
 '@TestMethod("AnalyzeQueries")
@@ -1389,8 +1422,12 @@ Private Sub AssertFormattedOutputLayout(ByVal wsOutput As Worksheet)
     If CLng(wsOutput.Cells(3, 1).Interior.Color) <> OUTPUT_FILL_COLOR Then
         Fail "Output label fill color is invalid."
     End If
-    If wsOutput.Range("A2:CL2").Borders(xlEdgeBottom).LineStyle <> xlContinuous Then
-        Fail "Output reference border is missing."
+    AssertCellHasNoEdgeBorders wsOutput.Cells(1, 1)
+    AssertCellHasNoEdgeBorders wsOutput.Cells(1, 90)
+    AssertCellHasNoEdgeBorders wsOutput.Cells(2, 1), False
+    AssertCellHasNoEdgeBorders wsOutput.Cells(2, 90), False
+    If wsOutput.Range("A3:CL3").Borders(xlEdgeTop).LineStyle <> xlContinuous Then
+        Fail "Output table border is missing."
     End If
     If CDbl(wsOutput.Rows(1).RowHeight) <> 13.5 Then
         Fail "Output row height should be 13.5."
@@ -1400,6 +1437,29 @@ Private Sub AssertFormattedOutputLayout(ByVal wsOutput As Worksheet)
     End If
     AssertOutputSheetFont
     AssertOutputSheetGridlinesHidden
+End Sub
+
+' 指定セルの辺に罫線がないことを検証
+Private Sub AssertCellHasNoEdgeBorders( _
+    ByVal cell As Range, _
+    Optional ByVal includeBottom As Boolean = True)
+
+    Dim borderIndex As Variant
+    Dim borderIndexes As Variant
+
+    If includeBottom Then
+        borderIndexes = Array(xlEdgeLeft, xlEdgeTop, xlEdgeBottom, xlEdgeRight)
+    Else
+        ' 表本体の上辺は、隣接する参照テーブル行の下辺としても取得される
+        borderIndexes = Array(xlEdgeLeft, xlEdgeTop, xlEdgeRight)
+    End If
+
+    For Each borderIndex In borderIndexes
+        If cell.Borders(CLng(borderIndex)).LineStyle <> xlNone Then
+            Fail cell.Worksheet.Name & "!" & cell.Address(False, False) & _
+                " should not have borders."
+        End If
+    Next borderIndex
 End Sub
 
 ' 外部parserを使用するテスト実行か判定
@@ -1475,6 +1535,11 @@ End Function
 ' SELECT系表のタイトルを返す
 Private Function SelectOutputTitle() As String
     SelectOutputTitle = W(&HFF1C) & "DB" & W(&H5165, &H51FA, &H529B, &H9805, &H76EE, &H5B9A, &H7FA9, &HFF1E)
+End Function
+
+' データ移送表のタイトルを生成
+Private Function DataTransferTitle() As String
+    DataTransferTitle = W(&HFF1C, &H30C7, &H30FC, &H30BF, &H79FB, &H9001, &H8868, &HFF1E)
 End Function
 
 ' 未対応ステートメントのフォールバック原因を返す

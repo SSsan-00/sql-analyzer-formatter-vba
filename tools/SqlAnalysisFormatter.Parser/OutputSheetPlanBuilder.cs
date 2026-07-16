@@ -87,7 +87,7 @@ public static class OutputSheetPlanBuilder
     }
 
     /// <summary>
-    /// SELECT INTOをソース・DB定義・移送表のハイブリッドへ変換
+    /// SELECT INTOを最上位SELECTとデータ移送表へ変換
     /// </summary>
     private static OutputSheetPlan BuildSelectIntoStatement(
         string sql,
@@ -97,36 +97,31 @@ public static class OutputSheetPlanBuilder
     {
         var (subqueries, plans) = BuildLeadingSubqueryPlans(sql, statement, mappings);
 
-        var sourceName = $"SQ{subqueries.Count + 1}";
         var sourceChildren = DirectChildSubqueries(sourceQuery, subqueries);
         var sourcePlan = BuildSelect(
             sql,
             sourceQuery,
             mappings,
-            $"サブクエリ[{sourceName}]",
+            "＜DB入出力項目定義＞",
             sourceChildren.Where(child => !child.IsNamed).Select(child => child.Name));
         plans.Add(ReplaceSubqueries(sourcePlan, sql, sourceChildren));
 
         var targetId = statement.Into.BaseIdentifier.Value;
-        var outputColumns = BuildSelectIntoColumns(
+        var targetColumns = BuildSelectIntoTargets(
             sql,
             sourceQuery,
             targetId,
-            sourceName,
             mappings);
-        plans.Add(BuildSelectIntoDefinitionPlan(sourceName, outputColumns));
-
         var targetName = ResolveTableName(targetId, mappings);
-        var transfers = outputColumns
-            .Select(column => new TransferItem(column.Name, column.Reference, string.Empty))
-            .ToArray();
-        plans.Add(BuildDataTransferPlan(
+        var transfers = BuildSelectTransfers(sql, targetColumns, sourceQuery.SelectElements);
+        var transferPlan = BuildDataTransferPlan(
             sql,
-            $"{targetName}、{sourceName}",
+            targetName,
             transfers,
             null,
             null,
-            mappings));
+            mappings);
+        plans.Add(ReplaceSubqueries(transferPlan, sql, sourceChildren));
 
         return CombinePlans(plans);
     }
@@ -158,16 +153,15 @@ public static class OutputSheetPlanBuilder
     }
 
     /// <summary>
-    /// SELECT INTOの出力項目名とSQ参照を1度だけ解決
+    /// SELECT INTOの移送先項目名を変換定義から解決
     /// </summary>
-    private static IReadOnlyList<SelectIntoColumn> BuildSelectIntoColumns(
+    private static IReadOnlyList<string> BuildSelectIntoTargets(
         string sql,
         QuerySpecification sourceQuery,
         string targetId,
-        string sourceName,
         IReadOnlyList<MappingDefinition> mappings)
     {
-        var columns = new List<SelectIntoColumn>(sourceQuery.SelectElements.Count);
+        var columns = new List<string>(sourceQuery.SelectElements.Count);
         foreach (var element in sourceQuery.SelectElements)
         {
             if (element is not SelectScalarExpression scalar)
@@ -195,7 +189,7 @@ public static class OutputSheetPlanBuilder
             }
 
             var fieldName = ResolveOutputFieldName(targetId, fieldId, mappings);
-            columns.Add(new SelectIntoColumn(fieldName, $"{sourceName}.{fieldName}"));
+            columns.Add(fieldName);
         }
 
         return columns;
@@ -220,39 +214,30 @@ public static class OutputSheetPlanBuilder
     }
 
     /// <summary>
-    /// SQの出力項目だけを参照するDB入出力項目定義を構成
+    /// SELECT取得式を同じ位置の移送先項目へ対応付け
     /// </summary>
-    private static OutputSheetPlan BuildSelectIntoDefinitionPlan(
-        string sourceName,
-        IReadOnlyList<SelectIntoColumn> columns)
+    private static IReadOnlyList<TransferItem> BuildSelectTransfers(
+        string sql,
+        IReadOnlyList<string> targets,
+        IList<SelectElement> selectElements)
     {
-        var cells = new List<OutputCell>
+        var transfers = new List<TransferItem>(targets.Count);
+        for (var index = 0; index < targets.Count; index++)
         {
-            new(1, 1, "＜DB入出力項目定義＞"),
-            new(2, 1, "参照テーブル: " + sourceName)
-        };
-        for (var index = 0; index < columns.Count; index++)
-        {
-            var row = index + 3;
-            if (index == 0)
+            if (selectElements[index] is not SelectScalarExpression scalar)
             {
-                cells.Add(new OutputCell(row, 1, "取得項目"));
+                throw new UnsupportedOutputException(
+                    "移送元として扱えない取得項目形式: " + selectElements[index].GetType().Name,
+                    selectElements[index]);
             }
-            cells.Add(new OutputCell(row, 7, $"取得項目{index + 1}"));
-            cells.Add(new OutputCell(row, 15, ":"));
-            cells.Add(new OutputCell(row, 17, columns[index].Reference));
+
+            transfers.Add(CreateTransferItem(
+                targets[index],
+                DisplayText(sql, scalar.Expression),
+                scalar.Expression));
         }
 
-        var sections = new List<OutputSection>
-        {
-            new(OutputSectionKind.Reference, 2, 2)
-        };
-        if (columns.Count > 0)
-        {
-            sections.Add(new OutputSection(OutputSectionKind.Standard, 3, columns.Count + 2));
-        }
-
-        return new OutputSheetPlan(cells, sections, columns.Count + 2, false);
+        return transfers;
     }
 
     /// <summary>
@@ -284,7 +269,7 @@ public static class OutputSheetPlanBuilder
     }
 
     /// <summary>
-    /// INSERT SELECTをSELECT表とデータ移送表のハイブリッドへ変換
+    /// INSERT SELECTを最上位SELECTとデータ移送表へ変換
     /// </summary>
     private static OutputSheetPlan BuildInsertSelect(
         string sql,
@@ -308,31 +293,31 @@ public static class OutputSheetPlanBuilder
         }
 
         var (subqueries, plans) = BuildLeadingSubqueryPlans(sql, statement, mappings);
-        var sourceName = NextGeneratedSubqueryName(subqueries);
         var sourceChildren = DirectChildSubqueries(sourceQuery, subqueries);
         var sourcePlan = BuildSelect(
             sql,
             sourceQuery,
             mappings,
-            $"サブクエリ[{sourceName}]",
+            "＜DB入出力項目定義＞",
             sourceChildren.Where(child => !child.IsNamed).Select(child => child.Name));
         plans.Add(ReplaceSubqueries(sourcePlan, sql, sourceChildren));
 
-        var transfers = specification.Columns
+        var targets = specification.Columns
             .Select(column => FragmentText(sql, column))
-            .Select(target => new TransferItem(target, $"{sourceName}.{target}", string.Empty))
             .ToArray();
+        var transfers = BuildSelectTransfers(sql, targets, sourceQuery.SelectElements);
         var targetDisplay = BuildTargetTableDisplay(
             specification.Target,
             mappings,
             includeIdentifier: false);
-        plans.Add(BuildDataTransferPlan(
+        var transferPlan = BuildDataTransferPlan(
             sql,
-            $"{targetDisplay}、{sourceName}",
+            targetDisplay,
             transfers,
             null,
             null,
-            mappings));
+            mappings);
+        plans.Add(ReplaceSubqueries(transferPlan, sql, sourceChildren));
 
         return CombinePlans(plans);
     }
@@ -385,23 +370,6 @@ public static class OutputSheetPlanBuilder
             null,
             null,
             mappings);
-    }
-
-    /// <summary>
-    /// 既存名と重複しない次のSQ名を取得
-    /// </summary>
-    private static string NextGeneratedSubqueryName(IReadOnlyList<SubqueryInfo> subqueries)
-    {
-        var names = subqueries
-            .Select(subquery => subquery.Name)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var index = subqueries.Count + 1;
-        while (names.Contains($"SQ{index}"))
-        {
-            index++;
-        }
-
-        return $"SQ{index}";
     }
 
     /// <summary>
@@ -2686,8 +2654,6 @@ public static class OutputSheetPlanBuilder
         string Source,
         string Method,
         ScalarExpression? Expression = null);
-
-    private sealed record SelectIntoColumn(string Name, string Reference);
 
     private sealed record ConditionPart(string Connector, BooleanExpression Expression);
 
