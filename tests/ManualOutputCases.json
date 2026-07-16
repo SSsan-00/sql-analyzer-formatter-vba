@@ -696,7 +696,6 @@
     {
       "id": "SEL-064",
       "title": "EXISTS付きDELETE",
-      "review_status": "暫定確定（ユーザーレビュー未実施）",
       "sql_lines": [
         "delete tb1 ",
         "from",

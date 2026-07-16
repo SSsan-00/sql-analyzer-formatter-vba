@@ -321,7 +321,6 @@
     },
     {
       "id": "SEL-064",
-      "review_status": "暫定確定（ユーザーレビュー未実施）",
       "sql_lines": ["delete tb1 ", "from", "    users as tb1 ", "where", "    exists ( ", "        select", "            1 ", "        from", "            orders as tb2 ", "        where", "            tb2.注文ユーザーID = tb1.ユーザーID", "    )"],
       "tables": { "tb1": "ユーザー", "tb2": "注文" }
     },
