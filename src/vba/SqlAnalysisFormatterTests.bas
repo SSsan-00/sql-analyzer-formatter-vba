@@ -19,6 +19,7 @@ Public Sub RunAllSqlAnalysisFormatterTests(Optional ByVal showMessage As Boolean
     AnalyzeQueries_ConvertsTsqlFunctionFixtures
     AnalyzeQueries_WritesWithSubqueriesInsideOut
     AnalyzeQueries_PreservesLeadingApostropheInOutput
+    AnalyzeQueries_DisablesWrappingAfterWritingLongText
     AnalyzeQueries_HandlesSyntaxCharactersInFieldNames
     AnalyzeQueries_UsesStandaloneTableNameForSingleTable
     AnalyzeQueries_WritesUnsupportedQueryAsIs
@@ -150,6 +151,38 @@ Public Function RunAllSqlAnalysisFormatterTestsForAutomation() As String
 TestFail:
     RunAllSqlAnalysisFormatterTestsForAutomation = CStr(Err.Number) & ": " & Err.Description
 End Function
+
+'@TestMethod("AnalyzeQueries")
+' 改行を含む長い文字列を書き込んだ後も折り返しと縮小表示を無効にすることを確認
+Public Sub AnalyzeQueries_DisablesWrappingAfterWritingLongText()
+    Dim wsRef As Worksheet
+    Dim wsSql As Worksheet
+    Dim wsOutput As Worksheet
+    Dim longText As String
+
+    If Not ExternalParserConfigured() Then Exit Sub
+
+    SetupWorkbook
+    Set wsRef = ThisWorkbook.Worksheets(ReferenceSheetName())
+    Set wsSql = ThisWorkbook.Worksheets(SqlSheetName())
+    Set wsOutput = ThisWorkbook.Worksheets(OutputSheetName())
+
+    wsRef.Range("A2:D200").ClearContents
+    wsSql.Range("A2:Z200").ClearContents
+    wsOutput.Cells.ClearContents
+    PutDefinition wsRef, 2, "-", "", "long_text", "長文"
+    longText = String(180, "A") & vbLf & String(180, "B")
+    wsSql.Cells(2, COL_SQL).Value = "SELECT '" & longText & "' AS long_text"
+
+    AnalyzeQueries False
+
+    If CBool(wsOutput.Cells(3, 32).WrapText) Then
+        Fail "Long output text should not enable wrapping."
+    End If
+    If CBool(wsOutput.Cells(3, 32).ShrinkToFit) Then
+        Fail "Long output text should not enable shrink to fit."
+    End If
+End Sub
 
 '@TestMethod("SetupWorkbook")
 Public Sub SetupWorkbook_CreatesOutputSheet()

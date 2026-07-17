@@ -231,7 +231,8 @@ public static class OutputSheetPlanBuilder
                     selectElements[index]);
             }
 
-            transfers.Add(CreateTransferItem(
+            transfers.Add(CreateCaseAwareTransferItem(
+                sql,
                 targets[index],
                 DisplayText(sql, scalar.Expression),
                 scalar.Expression));
@@ -353,7 +354,8 @@ public static class OutputSheetPlanBuilder
         var transfers = new List<TransferItem>(values.Count);
         for (var index = 0; index < values.Count; index++)
         {
-            transfers.Add(CreateInsertValuesTransferItem(
+            transfers.Add(CreateCaseAwareTransferItem(
+                sql,
                 FragmentText(sql, specification.Columns[index]),
                 FragmentText(sql, values[index]),
                 values[index]));
@@ -477,6 +479,10 @@ public static class OutputSheetPlanBuilder
                 if (transfer.Expression is not null &&
                     DirectCaseExpressions(transfer.Expression).Count > 0)
                 {
+                    if (transfer.RenderCaseInMethod && transfer.Source.Length > 0)
+                    {
+                        cells.Add(new OutputCell(row, 19, transfer.Source));
+                    }
                     var consumedRows = transfer.RenderCaseInMethod
                         ? WriteScalarExpression(
                             cells,
@@ -2417,19 +2423,20 @@ public static class OutputSheetPlanBuilder
     }
 
     /// <summary>
-    /// INSERT VALUESのCASEが列値を返さない場合はCASE全体を移送方法へ配置
+    /// 更新系のCASEを移送方法へ配置し、戻り値の列参照を移送元へ列挙
     /// </summary>
-    private static TransferItem CreateInsertValuesTransferItem(
+    private static TransferItem CreateCaseAwareTransferItem(
+        string sql,
         string target,
         string expressionText,
         ScalarExpression expression)
     {
-        if (expression is SearchedCaseExpression or SimpleCaseExpression &&
-            !CaseResultsReferenceColumns(expression))
+        if (expression is SearchedCaseExpression or SimpleCaseExpression)
         {
+            var sources = CollectCaseResultSources(sql, expression);
             return new TransferItem(
                 target,
-                string.Empty,
+                string.Join(", ", sources),
                 expressionText,
                 expression,
                 RenderCaseInMethod: true);
@@ -2463,53 +2470,73 @@ public static class OutputSheetPlanBuilder
             }
         }
 
-        if (clause.NewValue is SearchedCaseExpression or SimpleCaseExpression &&
-            !CaseResultsReferenceColumns(clause.NewValue))
-        {
-            return new TransferItem(
-                target,
-                string.Empty,
-                FragmentText(sql, clause.NewValue),
-                clause.NewValue,
-                RenderCaseInMethod: true);
-        }
-
-        return CreateTransferItem(
+        return CreateCaseAwareTransferItem(
+            sql,
             target,
             FragmentText(sql, clause.NewValue),
             clause.NewValue);
     }
 
     /// <summary>
-    /// CASEの条件式ではなく、THENとELSEが返す値に列参照があるか判定
+    /// CASEの条件式を除外し、THENとELSEが返す値の列参照を出現順に収集
     /// </summary>
-    private static bool CaseResultsReferenceColumns(ScalarExpression expression)
+    private static IReadOnlyList<string> CollectCaseResultSources(
+        string sql,
+        ScalarExpression expression)
     {
-        return expression switch
+        var resultExpressions = new List<ScalarExpression>();
+        CollectCaseResultExpressions(expression, resultExpressions);
+
+        var sources = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var resultExpression in resultExpressions)
         {
-            SearchedCaseExpression searchedCase =>
-                searchedCase.WhenClauses.Any(clause => ValueReferencesColumn(clause.ThenExpression)) ||
-                searchedCase.ElseExpression is not null && ValueReferencesColumn(searchedCase.ElseExpression),
-            SimpleCaseExpression simpleCase =>
-                simpleCase.WhenClauses.Any(clause => ValueReferencesColumn(clause.ThenExpression)) ||
-                simpleCase.ElseExpression is not null && ValueReferencesColumn(simpleCase.ElseExpression),
-            _ => false
-        };
+            foreach (var column in ColumnReferenceCollector.Collect(resultExpression))
+            {
+                var source = FragmentText(sql, column);
+                if (seen.Add(source))
+                {
+                    sources.Add(source);
+                }
+            }
+        }
+
+        return sources;
     }
 
     /// <summary>
-    /// CASEを返す値は条件を除外して再帰し、それ以外は式全体の列参照を確認
+    /// CASEの各戻り値を再帰的に収集
     /// </summary>
-    private static bool ValueReferencesColumn(ScalarExpression expression)
+    private static void CollectCaseResultExpressions(
+        ScalarExpression expression,
+        ICollection<ScalarExpression> results)
     {
-        if (expression is SearchedCaseExpression or SimpleCaseExpression)
+        switch (expression)
         {
-            return CaseResultsReferenceColumns(expression);
+            case SearchedCaseExpression searchedCase:
+                foreach (var clause in searchedCase.WhenClauses)
+                {
+                    CollectCaseResultExpressions(clause.ThenExpression, results);
+                }
+                if (searchedCase.ElseExpression is not null)
+                {
+                    CollectCaseResultExpressions(searchedCase.ElseExpression, results);
+                }
+                break;
+            case SimpleCaseExpression simpleCase:
+                foreach (var clause in simpleCase.WhenClauses)
+                {
+                    CollectCaseResultExpressions(clause.ThenExpression, results);
+                }
+                if (simpleCase.ElseExpression is not null)
+                {
+                    CollectCaseResultExpressions(simpleCase.ElseExpression, results);
+                }
+                break;
+            default:
+                results.Add(expression);
+                break;
         }
-
-        var visitor = new ColumnReferenceVisitor();
-        expression.Accept(visitor);
-        return visitor.Found;
     }
 
     /// <summary>
@@ -2694,6 +2721,39 @@ public static class OutputSheetPlanBuilder
         public override void ExplicitVisit(ColumnReferenceExpression node)
         {
             Found = true;
+        }
+    }
+
+    /// <summary>
+    /// CASE戻り値の式に含まれる列参照を出現順に収集
+    /// </summary>
+    private sealed class ColumnReferenceCollector : TSqlFragmentVisitor
+    {
+        private readonly List<ColumnReferenceExpression> _columns = [];
+
+        /// <summary>
+        /// ルートが列参照の場合も含めて列参照を収集
+        /// </summary>
+        public static IReadOnlyList<ColumnReferenceExpression> Collect(ScalarExpression expression)
+        {
+            var collector = new ColumnReferenceCollector();
+            if (expression is ColumnReferenceExpression directColumn)
+            {
+                collector._columns.Add(directColumn);
+            }
+            else
+            {
+                expression.Accept(collector);
+            }
+            return collector._columns;
+        }
+
+        /// <summary>
+        /// 列参照を収集
+        /// </summary>
+        public override void ExplicitVisit(ColumnReferenceExpression node)
+        {
+            _columns.Add(node);
         }
     }
 

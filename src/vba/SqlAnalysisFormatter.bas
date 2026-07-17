@@ -919,13 +919,14 @@ Private Function ApplyOutputPlan(ByVal ws As Worksheet, ByVal planText As String
         End If
     Next lineIndex
 
-    ApplyOutputSheetDimensions ws, rowCount
     If rowCount > 0 Then
         Set outputRange = ws.Range(ws.Cells(1, 1), ws.Cells(rowCount, OUTPUT_LAST_COLUMN))
         outputRange.NumberFormat = "@"
         ' Excel COM呼出しをセルごとではなく1回へまとめる
         outputRange.Value = cellValues
     End If
+    ' 長文・改行を含む値の書込み後に折り返し、縮小表示、行高を確定する
+    ApplyOutputSheetDimensions ws, rowCount
     For Each section In sections
         ApplyOutputSectionStyle ws, CStr(section(0)), CLng(section(1)), CLng(section(2))
     Next section

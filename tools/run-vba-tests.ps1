@@ -66,6 +66,7 @@ try {
         'AnalyzeQueries_ConvertsTsqlFunctionFixtures',
         'AnalyzeQueries_WritesWithSubqueriesInsideOut',
         'AnalyzeQueries_PreservesLeadingApostropheInOutput',
+        'AnalyzeQueries_DisablesWrappingAfterWritingLongText',
         'AnalyzeQueries_HandlesSyntaxCharactersInFieldNames',
         'AnalyzeQueries_UsesStandaloneTableNameForSingleTable',
         'AnalyzeQueries_WritesUnsupportedQueryAsIs',

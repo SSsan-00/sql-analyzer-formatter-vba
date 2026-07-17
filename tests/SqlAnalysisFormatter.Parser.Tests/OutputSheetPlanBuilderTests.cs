@@ -1341,6 +1341,81 @@ public sealed class OutputSheetPlanBuilderTests
     }
 
     /// <summary>
+    /// SELECT INTOの列値を返さないCASEを移送方法へ置くことを確認
+    /// </summary>
+    [TestMethod]
+    public void Build_ExpandsCaseInsideSelectIntoTransferMethod()
+    {
+        const string sql = """
+            SELECT
+                CASE
+                    WHEN tb1.状態 = 'ACTIVE' THEN '有効'
+                    ELSE '無効'
+                END AS status_name
+            INTO user_export
+            FROM users AS tb1
+            """;
+        MappingDefinition[] mappings =
+        [
+            new("user_export", "ユーザー出力", "", ""),
+            new("tb1", "ユーザー", "", ""),
+            new("-", "", "status_name", "状態表示")
+        ];
+
+        var plan = OutputSheetPlanBuilder.Build(sql, mappings);
+
+        Assert.IsFalse(plan.IsFallback);
+        var transferTitleRow = plan.Cells.Single(cell =>
+            cell.Column == 1 && cell.Value == "＜データ移送表＞").Row;
+        var transferRow = transferTitleRow + 3;
+        Assert.AreEqual("状態表示", CellValue(plan, transferRow, 1));
+        Assert.IsNull(CellValue(plan, transferRow, 19));
+        Assert.AreEqual("CASE結果", CellValue(plan, transferRow, 37));
+        Assert.AreEqual("※", CellValue(plan, transferRow, 51));
+        Assert.AreEqual("tb1.状態 = 'ACTIVE' → '有効'", CellValue(plan, transferRow, 52));
+        Assert.AreEqual("ELSE → '無効'", CellValue(plan, transferRow + 1, 52));
+    }
+
+    /// <summary>
+    /// INSERT SELECTのCASEが返す列を移送元へ列挙し、CASE本体を移送方法へ展開することを確認
+    /// </summary>
+    [TestMethod]
+    public void Build_ListsColumnReturningInsertSelectCaseSourcesAndExpandsMethod()
+    {
+        const string sql = """
+            INSERT INTO user_archive(氏名)
+            SELECT
+                CASE
+                    WHEN tb2.状態 IS NULL THEN tb1.氏名
+                    ELSE tb2.氏名
+                END
+            FROM
+                users AS tb1
+                INNER JOIN import_users AS tb2
+                    ON tb1.ユーザーID = tb2.ユーザーID
+            """;
+        MappingDefinition[] mappings =
+        [
+            new("user_archive", "ユーザー履歴", "", ""),
+            new("tb1", "ユーザー", "", ""),
+            new("tb2", "取込ユーザー", "", "")
+        ];
+
+        var plan = OutputSheetPlanBuilder.Build(sql, mappings);
+
+        Assert.IsFalse(plan.IsFallback);
+        var transferTitleRow = plan.Cells.Single(cell =>
+            cell.Column == 1 && cell.Value == "＜データ移送表＞").Row;
+        var transferRow = transferTitleRow + 3;
+        Assert.AreEqual("氏名", CellValue(plan, transferRow, 1));
+        Assert.AreEqual("tb1.氏名, tb2.氏名", CellValue(plan, transferRow, 19));
+        Assert.AreEqual("CASE結果", CellValue(plan, transferRow, 37));
+        Assert.AreEqual("※", CellValue(plan, transferRow, 51));
+        Assert.AreEqual("tb2.状態 IS NULL → tb1.氏名", CellValue(plan, transferRow, 52));
+        Assert.AreEqual("ELSE → tb2.氏名", CellValue(plan, transferRow + 1, 52));
+    }
+
+    /// <summary>
     /// SELECT INTOの最上位SELECTと移送元を直接対応させることを確認
     /// </summary>
     [TestMethod]
@@ -1688,16 +1763,16 @@ public sealed class OutputSheetPlanBuilderTests
     }
 
     /// <summary>
-    /// UPDATE SETのCASEが列値を返す場合は引き続き移送元へ出力することを確認
+    /// UPDATE SETのCASEが返す列を移送元へ列挙し、CASE本体を移送方法へ展開することを確認
     /// </summary>
     [TestMethod]
-    public void Build_WritesColumnReturningUpdateCaseAsTransferSource()
+    public void Build_ListsColumnReturningUpdateCaseSourcesAndExpandsMethod()
     {
         const string sql = """
             UPDATE tb1
             SET
                 氏名 = CASE
-                    WHEN tb2.氏名 IS NULL THEN tb1.氏名
+                    WHEN tb2.状態 IS NULL THEN tb1.氏名
                     ELSE tb2.氏名
                 END
             FROM
@@ -1709,10 +1784,15 @@ public sealed class OutputSheetPlanBuilderTests
         var plan = OutputSheetPlanBuilder.Build(sql, []);
 
         Assert.IsFalse(plan.IsFallback);
-        Assert.AreEqual("CASE結果", CellValue(plan, 4, 19));
-        Assert.AreEqual("tb2.氏名 IS NULL → tb1.氏名", CellValue(plan, 4, 37));
-        Assert.AreEqual("ELSE → tb2.氏名", CellValue(plan, 5, 37));
-        Assert.IsFalse(plan.Sections.Any(section => section.Kind == OutputSectionKind.TransferGroup));
+        Assert.AreEqual("tb1.氏名, tb2.氏名", CellValue(plan, 4, 19));
+        Assert.AreEqual("CASE結果", CellValue(plan, 4, 37));
+        Assert.AreEqual("※", CellValue(plan, 4, 51));
+        Assert.AreEqual("tb2.状態 IS NULL → tb1.氏名", CellValue(plan, 4, 52));
+        Assert.AreEqual("ELSE → tb2.氏名", CellValue(plan, 5, 52));
+        Assert.IsTrue(plan.Sections.Any(section =>
+            section.Kind == OutputSectionKind.TransferGroup &&
+            section.StartRow == 4 &&
+            section.EndRow == 5));
     }
 
     /// <summary>
