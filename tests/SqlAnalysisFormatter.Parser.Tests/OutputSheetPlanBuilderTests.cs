@@ -656,9 +656,9 @@ public sealed class OutputSheetPlanBuilderTests
         Assert.AreEqual("eligible_flag", CellValue(plan, 3, 17));
         Assert.AreEqual("※", CellValue(plan, 3, 31));
         Assert.IsNull(CellValue(plan, 3, 32));
-        Assert.AreEqual("tb1.状態 = 'ACTIVE'", CellValue(plan, 3, 34));
+        Assert.AreEqual("(tb1.状態 = 'ACTIVE'", CellValue(plan, 3, 34));
         Assert.AreEqual("AND", CellValue(plan, 4, 32));
-        Assert.AreEqual("tb1.削除日時 IS NULL → 1", CellValue(plan, 4, 34));
+        Assert.AreEqual("tb1.削除日時 IS NULL) → 1", CellValue(plan, 4, 34));
         Assert.AreEqual("ELSE → 0", CellValue(plan, 5, 32));
     }
 
@@ -687,7 +687,7 @@ public sealed class OutputSheetPlanBuilderTests
     }
 
     /// <summary>
-    /// 括弧とAND/ORが混在するWHEN条件を論理構造どおり再帰的に階層表示することを確認
+    /// 括弧とAND/ORが混在するWHEN条件を、括弧を保持して論理構造どおり階層表示することを確認
     /// </summary>
     [TestMethod]
     public void Build_ExpandsDeeplyNestedCompoundCaseConditions()
@@ -713,21 +713,21 @@ public sealed class OutputSheetPlanBuilderTests
         Assert.AreEqual(11, plan.RowCount);
         Assert.AreEqual("result_code", CellValue(plan, 3, 17));
         Assert.AreEqual("※", CellValue(plan, 3, 31));
-        Assert.AreEqual("tb1.a = 1", CellValue(plan, 3, 38));
+        Assert.AreEqual("((tb1.a = 1", CellValue(plan, 3, 38));
         Assert.AreEqual("OR", CellValue(plan, 4, 36));
-        Assert.AreEqual("tb1.b = 1", CellValue(plan, 4, 38));
+        Assert.AreEqual("tb1.b = 1)", CellValue(plan, 4, 38));
         Assert.AreEqual("AND", CellValue(plan, 5, 34));
-        Assert.AreEqual("tb1.c = 1", CellValue(plan, 5, 38));
+        Assert.AreEqual("(tb1.c = 1", CellValue(plan, 5, 38));
         Assert.AreEqual("OR", CellValue(plan, 6, 36));
         Assert.AreEqual("tb1.d = 1", CellValue(plan, 6, 38));
         Assert.AreEqual("OR", CellValue(plan, 7, 36));
-        Assert.AreEqual("tb1.e = 1", CellValue(plan, 7, 38));
+        Assert.AreEqual("tb1.e = 1))", CellValue(plan, 7, 38));
         Assert.AreEqual("OR", CellValue(plan, 8, 32));
-        Assert.AreEqual("tb1.f = 1", CellValue(plan, 8, 36));
+        Assert.AreEqual("(tb1.f = 1", CellValue(plan, 8, 36));
         Assert.AreEqual("AND", CellValue(plan, 9, 34));
-        Assert.AreEqual("tb1.g = 1", CellValue(plan, 9, 38));
+        Assert.AreEqual("(tb1.g = 1", CellValue(plan, 9, 38));
         Assert.AreEqual("OR", CellValue(plan, 10, 36));
-        Assert.AreEqual("tb1.h = 1 → 'X'", CellValue(plan, 10, 38));
+        Assert.AreEqual("tb1.h = 1)) → 'X'", CellValue(plan, 10, 38));
         Assert.AreEqual("ELSE → 'Y'", CellValue(plan, 11, 32));
     }
 
@@ -813,9 +813,9 @@ public sealed class OutputSheetPlanBuilderTests
         Assert.AreEqual(6, plan.RowCount);
         Assert.AreEqual("CASE結果 = 1", CellValue(plan, 4, 17));
         Assert.AreEqual("※", CellValue(plan, 4, 31));
-        Assert.AreEqual("tb1.状態 = 'ACTIVE'", CellValue(plan, 4, 34));
+        Assert.AreEqual("(tb1.状態 = 'ACTIVE'", CellValue(plan, 4, 34));
         Assert.AreEqual("AND", CellValue(plan, 5, 32));
-        Assert.AreEqual("tb1.削除日時 IS NULL → 1", CellValue(plan, 5, 34));
+        Assert.AreEqual("tb1.削除日時 IS NULL) → 1", CellValue(plan, 5, 34));
         Assert.AreEqual("ELSE → 0", CellValue(plan, 6, 32));
     }
 

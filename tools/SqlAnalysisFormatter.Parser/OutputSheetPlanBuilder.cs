@@ -1144,7 +1144,7 @@ public static class OutputSheetPlanBuilder
                 cells.Add(new OutputCell(
                     row,
                     column + part.ExpressionDepth * 2,
-                    ConditionDisplayText(sql, part.Expression)));
+                    CaseConditionDisplayText(sql, part)));
                 row++;
             }
 
@@ -1159,7 +1159,7 @@ public static class OutputSheetPlanBuilder
             row = WriteCaseResultLine(
                 cells,
                 sql,
-                ConditionDisplayText(sql, finalCondition.Expression),
+                CaseConditionDisplayText(sql, finalCondition),
                 clause.ThenExpression,
                 row,
                 column + finalCondition.ExpressionDepth * 2);
@@ -1217,19 +1217,6 @@ public static class OutputSheetPlanBuilder
     }
 
     /// <summary>
-    /// WHEN条件全体を囲む括弧を除き、内部のANDとORを分解可能にする
-    /// </summary>
-    private static BooleanExpression UnwrapCaseCondition(BooleanExpression expression)
-    {
-        while (expression is BooleanParenthesisExpression parenthesized)
-        {
-            expression = parenthesized.Expression;
-        }
-
-        return expression;
-    }
-
-    /// <summary>
     /// CASEのWHEN条件を括弧とAND/ORの論理構造に沿った表示部品へ変換
     /// </summary>
     private static IReadOnlyList<CaseConditionPart> BuildCaseConditionParts(
@@ -1246,6 +1233,18 @@ public static class OutputSheetPlanBuilder
     }
 
     /// <summary>
+    /// 条件本体へ元の論理グループを表す括弧を付けて表示
+    /// </summary>
+    private static string CaseConditionDisplayText(
+        string sql,
+        CaseConditionPart part)
+    {
+        return new string('(', part.OpeningParentheses) +
+            ConditionDisplayText(sql, part.Expression) +
+            new string(')', part.ClosingParentheses);
+    }
+
+    /// <summary>
     /// 同一階層の論理演算子を揃え、異なる論理グループを2列ずつ深くして追加
     /// </summary>
     private static void AddCaseConditionParts(
@@ -1253,10 +1252,33 @@ public static class OutputSheetPlanBuilder
         int groupDepth,
         string connector,
         int connectorDepth,
-        ICollection<CaseConditionPart> parts)
+        List<CaseConditionPart> parts)
     {
-        var unwrapped = UnwrapCaseCondition(expression);
-        if (unwrapped is BooleanBinaryExpression binary)
+        if (expression is BooleanParenthesisExpression parenthesized)
+        {
+            var firstPartIndex = parts.Count;
+            AddCaseConditionParts(
+                parenthesized.Expression,
+                groupDepth,
+                connector,
+                connectorDepth,
+                parts);
+            if (parts.Count > firstPartIndex)
+            {
+                parts[firstPartIndex] = parts[firstPartIndex] with
+                {
+                    OpeningParentheses = parts[firstPartIndex].OpeningParentheses + 1
+                };
+                var lastPartIndex = parts.Count - 1;
+                parts[lastPartIndex] = parts[lastPartIndex] with
+                {
+                    ClosingParentheses = parts[lastPartIndex].ClosingParentheses + 1
+                };
+            }
+            return;
+        }
+
+        if (expression is BooleanBinaryExpression binary)
         {
             var operands = CollectBooleanOperands(binary, binary.BinaryExpressionType);
             for (var index = 0; index < operands.Count; index++)
@@ -1274,7 +1296,7 @@ public static class OutputSheetPlanBuilder
         parts.Add(new CaseConditionPart(
             connector,
             connectorDepth,
-            unwrapped,
+            expression,
             groupDepth));
     }
 
@@ -2918,7 +2940,9 @@ public static class OutputSheetPlanBuilder
         string Connector,
         int ConnectorDepth,
         BooleanExpression Expression,
-        int ExpressionDepth);
+        int ExpressionDepth,
+        int OpeningParentheses = 0,
+        int ClosingParentheses = 0);
 
     private sealed record ConditionLayout(
         int ConnectorColumn,

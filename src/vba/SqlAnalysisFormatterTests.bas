@@ -212,14 +212,14 @@ Public Sub AnalyzeQueries_RendersDeeplyNestedCaseConditions()
 
     AnalyzeQueries False
 
-    AssertCellValue wsOutput.Cells(3, 38), "tb1.a = 1"
+    AssertCellValue wsOutput.Cells(3, 38), "((tb1.a = 1"
     AssertCellValue wsOutput.Cells(4, 36), "OR"
     AssertCellValue wsOutput.Cells(5, 34), "AND"
-    AssertCellValue wsOutput.Cells(7, 38), "tb1.e = 1"
+    AssertCellValue wsOutput.Cells(7, 38), "tb1.e = 1))"
     AssertCellValue wsOutput.Cells(8, 32), "OR"
     AssertCellValue wsOutput.Cells(9, 34), "AND"
     AssertCellValue wsOutput.Cells(10, 36), "OR"
-    AssertCellValue wsOutput.Cells(10, 38), "tb1.h = 1 " & W(&H2192) & " 'X'"
+    AssertCellValue wsOutput.Cells(10, 38), "tb1.h = 1)) " & W(&H2192) & " 'X'"
     AssertCellValue wsOutput.Cells(11, 32), "ELSE " & W(&H2192) & " 'Y'"
 End Sub
 
