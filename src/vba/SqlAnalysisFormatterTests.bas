@@ -20,6 +20,7 @@ Public Sub RunAllSqlAnalysisFormatterTests(Optional ByVal showMessage As Boolean
     AnalyzeQueries_WritesWithSubqueriesInsideOut
     AnalyzeQueries_PreservesLeadingApostropheInOutput
     AnalyzeQueries_DisablesWrappingAfterWritingLongText
+    AnalyzeQueries_RendersDeeplyNestedCaseConditions
     AnalyzeQueries_HandlesSyntaxCharactersInFieldNames
     AnalyzeQueries_UsesStandaloneTableNameForSingleTable
     AnalyzeQueries_WritesUnsupportedQueryAsIs
@@ -182,6 +183,43 @@ Public Sub AnalyzeQueries_DisablesWrappingAfterWritingLongText()
     If CBool(wsOutput.Cells(3, 32).ShrinkToFit) Then
         Fail "Long output text should not enable shrink to fit."
     End If
+End Sub
+
+'@TestMethod("AnalyzeQueries")
+' 括弧とAND/ORが混在するCASE条件を再帰的な階層で描画することを確認
+Public Sub AnalyzeQueries_RendersDeeplyNestedCaseConditions()
+    Dim wsRef As Worksheet
+    Dim wsSql As Worksheet
+    Dim wsOutput As Worksheet
+
+    If Not ExternalParserConfigured() Then Exit Sub
+
+    SetupWorkbook
+    Set wsRef = ThisWorkbook.Worksheets(ReferenceSheetName())
+    Set wsSql = ThisWorkbook.Worksheets(SqlSheetName())
+    Set wsOutput = ThisWorkbook.Worksheets(OutputSheetName())
+
+    wsRef.Range("A2:D200").ClearContents
+    wsSql.Range("A2:Z200").ClearContents
+    wsOutput.Cells.ClearContents
+    PutDefinition wsRef, 2, "tb1", "conditions", "a", "a"
+    wsSql.Cells(2, COL_SQL).Value = _
+        "SELECT CASE WHEN ((tb1.a = 1 OR tb1.b = 1) " & _
+        "AND (tb1.c = 1 OR tb1.d = 1 OR tb1.e = 1)) " & _
+        "OR (tb1.f = 1 AND (tb1.g = 1 OR tb1.h = 1)) " & _
+        "THEN 'X' ELSE 'Y' END AS result_code FROM conditions AS tb1"
+
+    AnalyzeQueries False
+
+    AssertCellValue wsOutput.Cells(3, 38), "tb1.a = 1"
+    AssertCellValue wsOutput.Cells(4, 36), "OR"
+    AssertCellValue wsOutput.Cells(5, 34), "AND"
+    AssertCellValue wsOutput.Cells(7, 38), "tb1.e = 1"
+    AssertCellValue wsOutput.Cells(8, 32), "OR"
+    AssertCellValue wsOutput.Cells(9, 34), "AND"
+    AssertCellValue wsOutput.Cells(10, 36), "OR"
+    AssertCellValue wsOutput.Cells(10, 38), "tb1.h = 1 " & W(&H2192) & " 'X'"
+    AssertCellValue wsOutput.Cells(11, 32), "ELSE " & W(&H2192) & " 'Y'"
 End Sub
 
 '@TestMethod("SetupWorkbook")

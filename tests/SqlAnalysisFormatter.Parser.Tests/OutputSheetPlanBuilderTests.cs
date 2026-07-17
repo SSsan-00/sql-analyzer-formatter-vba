@@ -687,6 +687,51 @@ public sealed class OutputSheetPlanBuilderTests
     }
 
     /// <summary>
+    /// 括弧とAND/ORが混在するWHEN条件を論理構造どおり再帰的に階層表示することを確認
+    /// </summary>
+    [TestMethod]
+    public void Build_ExpandsDeeplyNestedCompoundCaseConditions()
+    {
+        const string sql = """
+            SELECT
+                CASE
+                    WHEN (
+                        (tb1.a = 1 OR tb1.b = 1)
+                        AND (tb1.c = 1 OR tb1.d = 1 OR tb1.e = 1)
+                    ) OR (
+                        tb1.f = 1
+                        AND (tb1.g = 1 OR tb1.h = 1)
+                    ) THEN 'X'
+                    ELSE 'Y'
+                END AS result_code
+            FROM conditions AS tb1
+            """;
+
+        var plan = OutputSheetPlanBuilder.Build(sql, [new("tb1", "条件", "", "")]);
+
+        Assert.IsFalse(plan.IsFallback);
+        Assert.AreEqual(11, plan.RowCount);
+        Assert.AreEqual("result_code", CellValue(plan, 3, 17));
+        Assert.AreEqual("※", CellValue(plan, 3, 31));
+        Assert.AreEqual("tb1.a = 1", CellValue(plan, 3, 38));
+        Assert.AreEqual("OR", CellValue(plan, 4, 36));
+        Assert.AreEqual("tb1.b = 1", CellValue(plan, 4, 38));
+        Assert.AreEqual("AND", CellValue(plan, 5, 34));
+        Assert.AreEqual("tb1.c = 1", CellValue(plan, 5, 38));
+        Assert.AreEqual("OR", CellValue(plan, 6, 36));
+        Assert.AreEqual("tb1.d = 1", CellValue(plan, 6, 38));
+        Assert.AreEqual("OR", CellValue(plan, 7, 36));
+        Assert.AreEqual("tb1.e = 1", CellValue(plan, 7, 38));
+        Assert.AreEqual("OR", CellValue(plan, 8, 32));
+        Assert.AreEqual("tb1.f = 1", CellValue(plan, 8, 36));
+        Assert.AreEqual("AND", CellValue(plan, 9, 34));
+        Assert.AreEqual("tb1.g = 1", CellValue(plan, 9, 38));
+        Assert.AreEqual("OR", CellValue(plan, 10, 36));
+        Assert.AreEqual("tb1.h = 1 → 'X'", CellValue(plan, 10, 38));
+        Assert.AreEqual("ELSE → 'Y'", CellValue(plan, 11, 32));
+    }
+
+    /// <summary>
     /// GROUP BYのCASEを取得項目のエイリアスと分岐へ展開することを確認
     /// </summary>
     [TestMethod]

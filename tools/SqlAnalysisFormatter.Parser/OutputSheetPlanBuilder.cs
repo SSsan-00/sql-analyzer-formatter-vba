@@ -1130,41 +1130,39 @@ public static class OutputSheetPlanBuilder
         var row = startRow;
         foreach (var clause in expression.WhenClauses)
         {
-            var conditions = FlattenBooleanExpression(UnwrapCaseCondition(clause.WhenExpression));
-            var isCompoundCondition = conditions.Count > 1;
-            var conditionColumn = isCompoundCondition ? column + 2 : column;
+            var conditions = BuildCaseConditionParts(clause.WhenExpression);
             for (var index = 0; index < conditions.Count - 1; index++)
             {
                 var part = conditions[index];
-                if (isCompoundCondition && part.Connector.Length > 0)
+                if (part.Connector.Length > 0)
                 {
-                    cells.Add(new OutputCell(row, column, part.Connector));
+                    cells.Add(new OutputCell(
+                        row,
+                        column + part.ConnectorDepth * 2,
+                        part.Connector));
                 }
-                var prefix = isCompoundCondition || part.Connector.Length == 0
-                    ? string.Empty
-                    : part.Connector + " ";
                 cells.Add(new OutputCell(
                     row,
-                    conditionColumn,
-                    prefix + ConditionDisplayText(sql, part.Expression)));
+                    column + part.ExpressionDepth * 2,
+                    ConditionDisplayText(sql, part.Expression)));
                 row++;
             }
 
             var finalCondition = conditions[^1];
-            if (isCompoundCondition && finalCondition.Connector.Length > 0)
+            if (finalCondition.Connector.Length > 0)
             {
-                cells.Add(new OutputCell(row, column, finalCondition.Connector));
+                cells.Add(new OutputCell(
+                    row,
+                    column + finalCondition.ConnectorDepth * 2,
+                    finalCondition.Connector));
             }
-            var finalPrefix = isCompoundCondition || finalCondition.Connector.Length == 0
-                ? string.Empty
-                : finalCondition.Connector + " ";
             row = WriteCaseResultLine(
                 cells,
                 sql,
-                finalPrefix + ConditionDisplayText(sql, finalCondition.Expression),
+                ConditionDisplayText(sql, finalCondition.Expression),
                 clause.ThenExpression,
                 row,
-                conditionColumn);
+                column + finalCondition.ExpressionDepth * 2);
         }
 
         if (expression.ElseExpression is not null)
@@ -1229,6 +1227,86 @@ public static class OutputSheetPlanBuilder
         }
 
         return expression;
+    }
+
+    /// <summary>
+    /// CASEのWHEN条件を括弧とAND/ORの論理構造に沿った表示部品へ変換
+    /// </summary>
+    private static IReadOnlyList<CaseConditionPart> BuildCaseConditionParts(
+        BooleanExpression expression)
+    {
+        var parts = new List<CaseConditionPart>();
+        AddCaseConditionParts(
+            expression,
+            groupDepth: 0,
+            connector: string.Empty,
+            connectorDepth: 0,
+            parts);
+        return parts;
+    }
+
+    /// <summary>
+    /// 同一階層の論理演算子を揃え、異なる論理グループを2列ずつ深くして追加
+    /// </summary>
+    private static void AddCaseConditionParts(
+        BooleanExpression expression,
+        int groupDepth,
+        string connector,
+        int connectorDepth,
+        ICollection<CaseConditionPart> parts)
+    {
+        var unwrapped = UnwrapCaseCondition(expression);
+        if (unwrapped is BooleanBinaryExpression binary)
+        {
+            var operands = CollectBooleanOperands(binary, binary.BinaryExpressionType);
+            for (var index = 0; index < operands.Count; index++)
+            {
+                AddCaseConditionParts(
+                    operands[index],
+                    groupDepth + 1,
+                    index == 0 ? connector : BooleanOperatorText(binary.BinaryExpressionType),
+                    index == 0 ? connectorDepth : groupDepth,
+                    parts);
+            }
+            return;
+        }
+
+        parts.Add(new CaseConditionPart(
+            connector,
+            connectorDepth,
+            unwrapped,
+            groupDepth));
+    }
+
+    /// <summary>
+    /// 括弧を越えず、連続する同種のANDまたはORを同一階層のオペランドへ展開
+    /// </summary>
+    private static IReadOnlyList<BooleanExpression> CollectBooleanOperands(
+        BooleanExpression expression,
+        BooleanBinaryExpressionType operatorType)
+    {
+        var operands = new List<BooleanExpression>();
+        AddBooleanOperands(expression, operatorType, operands);
+        return operands;
+    }
+
+    /// <summary>
+    /// 同種の論理二項式を再帰的にオペランドへ追加
+    /// </summary>
+    private static void AddBooleanOperands(
+        BooleanExpression expression,
+        BooleanBinaryExpressionType operatorType,
+        ICollection<BooleanExpression> operands)
+    {
+        if (expression is BooleanBinaryExpression binary &&
+            binary.BinaryExpressionType == operatorType)
+        {
+            AddBooleanOperands(binary.FirstExpression, operatorType, operands);
+            AddBooleanOperands(binary.SecondExpression, operatorType, operands);
+            return;
+        }
+
+        operands.Add(expression);
     }
 
     /// <summary>
@@ -2859,6 +2937,12 @@ public static class OutputSheetPlanBuilder
         bool RenderCaseInMethod = false);
 
     private sealed record ConditionPart(string Connector, BooleanExpression Expression);
+
+    private sealed record CaseConditionPart(
+        string Connector,
+        int ConnectorDepth,
+        BooleanExpression Expression,
+        int ExpressionDepth);
 
     private sealed record ConditionLayout(
         int ConnectorColumn,
