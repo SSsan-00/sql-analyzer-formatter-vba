@@ -943,6 +943,64 @@
       "definitions": [
         { "table_id": "tb1", "table_name_ja": "ユーザー", "field_id": "status", "field_name_ja": "状態" }
       ]
+    },
+    {
+      "id": "SEL-076",
+      "title": "複数行INSERT VALUES",
+      "review_status": "暫定期待値（ユーザーレビュー待ち）",
+      "sql_lines": [
+        "insert ",
+        "into users(user_id, name, status, created_at) ",
+        "values",
+        "    (@user_id_1, @name_1, 'ACTIVE', sysdatetime())",
+        "    , (@user_id_2, @name_2, 'PENDING', sysdatetime())"
+      ],
+      "definitions": [
+        { "table_id": "users", "table_name_ja": "ユーザー", "field_id": "user_id", "field_name_ja": "ユーザーID" },
+        { "table_id": "users", "table_name_ja": "ユーザー", "field_id": "name", "field_name_ja": "氏名" },
+        { "table_id": "users", "table_name_ja": "ユーザー", "field_id": "status", "field_name_ja": "状態" },
+        { "table_id": "users", "table_name_ja": "ユーザー", "field_id": "created_at", "field_name_ja": "作成日時" },
+        { "table_id": "-", "table_name_ja": "ユーザー", "field_id": "user_id", "field_name_ja": "ユーザーID" },
+        { "table_id": "-", "table_name_ja": "ユーザー", "field_id": "name", "field_name_ja": "氏名" },
+        { "table_id": "-", "table_name_ja": "ユーザー", "field_id": "status", "field_name_ja": "状態" },
+        { "table_id": "-", "table_name_ja": "ユーザー", "field_id": "created_at", "field_name_ja": "作成日時" }
+      ]
+    },
+    {
+      "id": "SEL-077",
+      "title": "INSERT SELECT内のUNION ALL",
+      "review_status": "暫定期待値（ユーザーレビュー待ち）",
+      "sql_lines": [
+        "insert ",
+        "into user_archive(user_id, name) ",
+        "select",
+        "    tb1.user_id",
+        "    , tb1.name ",
+        "from",
+        "    users as tb1 ",
+        "where",
+        "    tb1.status = 'ACTIVE' ",
+        "union all",
+        "select",
+        "    tb2.user_id",
+        "    , trim(tb2.name) ",
+        "from",
+        "    archived_users as tb2 ",
+        "where",
+        "    tb2.status = 'INACTIVE'"
+      ],
+      "definitions": [
+        { "table_id": "user_archive", "table_name_ja": "ユーザーアーカイブ", "field_id": "user_id", "field_name_ja": "ユーザーID" },
+        { "table_id": "user_archive", "table_name_ja": "ユーザーアーカイブ", "field_id": "name", "field_name_ja": "氏名" },
+        { "table_id": "-", "table_name_ja": "ユーザーアーカイブ", "field_id": "user_id", "field_name_ja": "ユーザーID" },
+        { "table_id": "-", "table_name_ja": "ユーザーアーカイブ", "field_id": "name", "field_name_ja": "氏名" },
+        { "table_id": "tb1", "table_name_ja": "ユーザー", "field_id": "user_id", "field_name_ja": "ユーザーID" },
+        { "table_id": "tb1", "table_name_ja": "ユーザー", "field_id": "name", "field_name_ja": "氏名" },
+        { "table_id": "tb1", "table_name_ja": "ユーザー", "field_id": "status", "field_name_ja": "状態" },
+        { "table_id": "tb2", "table_name_ja": "退会ユーザー", "field_id": "user_id", "field_name_ja": "ユーザーID" },
+        { "table_id": "tb2", "table_name_ja": "退会ユーザー", "field_id": "name", "field_name_ja": "氏名" },
+        { "table_id": "tb2", "table_name_ja": "退会ユーザー", "field_id": "status", "field_name_ja": "状態" }
+      ]
     }
   ]
 }
