@@ -134,15 +134,17 @@ Public Sub ClearData(Optional ByVal showMessage As Boolean = True)
     ClearRowsBelowHeader wsSql, COL_REPLACEMENT
     ClearOutputSheet wsOutput
     RestoreHeaders wsRef, wsSql
-    ResetOutputSheetViewPosition wsOutput
+    ResetSheetViewPosition wsRef
+    ResetSheetViewPosition wsSql
+    ResetSheetViewPosition wsOutput
     If showMessage Then
         MsgBox ClearDoneMessage(), vbInformation
     End If
     RestoreFindSearchOrderByRows wsSql
 End Sub
 
-' アウトプットの選択セルとスクロールをA1へ戻し、元のシート表示を維持
-Private Sub ResetOutputSheetViewPosition(ByVal ws As Worksheet)
+' 指定シートの選択セルとスクロールをA1へ戻し、元のシート表示を維持
+Private Sub ResetSheetViewPosition(ByVal ws As Worksheet)
     Dim previousSheet As Object
     Dim previousScreenUpdating As Boolean
     Dim errorNumber As Long

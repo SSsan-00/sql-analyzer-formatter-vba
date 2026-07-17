@@ -362,10 +362,12 @@ End Sub
 '@TestMethod("ClearData")
 Public Sub ClearData_ClearsOutputSheet()
     Dim activeSheetBeforeClear As Object
+    Dim wsRef As Worksheet
     Dim wsSql As Worksheet
     Dim wsOutput As Worksheet
 
     SetupWorkbook
+    Set wsRef = ThisWorkbook.Worksheets(ReferenceSheetName())
     Set wsSql = ThisWorkbook.Worksheets(SqlSheetName())
     Set wsOutput = ThisWorkbook.Worksheets(OutputSheetName())
     wsOutput.Cells(1, 1).Value = "output header"
@@ -375,7 +377,15 @@ Public Sub ClearData_ClearsOutputSheet()
     wsOutput.Cells(200, 17).WrapText = True
     wsOutput.Cells(200, 17).ShrinkToFit = True
 
-    ' クリア前のアウトプット表示位置とアクティブシートを再現
+    ' クリア前の各シートの表示位置とアクティブシートを再現
+    wsRef.Activate
+    wsRef.Cells(80, 4).Select
+    ActiveWindow.ScrollRow = 30
+    ActiveWindow.ScrollColumn = 2
+    wsSql.Activate
+    wsSql.Cells(90, 20).Select
+    ActiveWindow.ScrollRow = 40
+    ActiveWindow.ScrollColumn = 10
     wsOutput.Activate
     wsOutput.Cells(100, 90).Select
     ActiveWindow.ScrollRow = 50
@@ -392,9 +402,11 @@ Public Sub ClearData_ClearsOutputSheet()
     AssertOutputSheetFont
     AssertOutputTextFittingDisabled wsOutput
     If Not ActiveSheet Is activeSheetBeforeClear Then
-        Fail "Active sheet changed while clearing output."
+        Fail "Active sheet changed while clearing data."
     End If
-    AssertOutputViewReset wsOutput, activeSheetBeforeClear
+    AssertSheetViewReset wsRef
+    AssertSheetViewReset wsSql
+    AssertSheetViewReset wsOutput
 End Sub
 
 ' アウトプット順序テスト用データを作成
@@ -1397,14 +1409,17 @@ Private Sub AssertOutputTextFittingDisabled(ByVal wsOutput As Worksheet)
     End If
 End Sub
 
-' アウトプットシートの選択セルとスクロール位置がA1へ戻ることを検証
-Private Sub AssertOutputViewReset(ByVal wsOutput As Worksheet, ByVal previousSheet As Object)
-    wsOutput.Activate
+' 指定シートの選択セルとスクロール位置がA1へ戻ることを検証
+Private Sub AssertSheetViewReset(ByVal ws As Worksheet)
+    Dim previousSheet As Object
+
+    Set previousSheet = ActiveSheet
+    ws.Activate
     If Selection.Address <> "$A$1" Then
-        Fail "Output selection should be A1 after clearing."
+        Fail ws.Name & " selection should be A1 after clearing."
     End If
     If ActiveWindow.ScrollRow <> 1 Or ActiveWindow.ScrollColumn <> 1 Then
-        Fail "Output scroll position should be A1 after clearing."
+        Fail ws.Name & " scroll position should be A1 after clearing."
     End If
     previousSheet.Activate
 End Sub
