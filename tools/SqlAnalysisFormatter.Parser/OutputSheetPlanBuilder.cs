@@ -1511,7 +1511,7 @@ public static class OutputSheetPlanBuilder
     }
 
     /// <summary>
-    /// リテラル内部を維持し、複数行の外側式だけを1行へ圧縮
+    /// リテラルと引用識別子の内部を維持し、不可視空白を半角スペース1個へ正規化
     /// </summary>
     private static string CompactSqlWhitespace(string value)
     {
@@ -2275,7 +2275,8 @@ public static class OutputSheetPlanBuilder
     /// </summary>
     private static string FragmentText(string sql, TSqlFragment fragment)
     {
-        return ExtractFragmentText(sql, fragment, normalizeCoalesce: true);
+        return CompactSqlWhitespace(
+            ExtractFragmentText(sql, fragment, normalizeCoalesce: true));
     }
 
     /// <summary>
@@ -2287,7 +2288,8 @@ public static class OutputSheetPlanBuilder
         bool uppercaseDateParts = false,
         bool compactUnarySigns = false)
     {
-        return SqlDisplayFormatter.Format(sql, fragment, uppercaseDateParts, compactUnarySigns);
+        return CompactSqlWhitespace(
+            SqlDisplayFormatter.Format(sql, fragment, uppercaseDateParts, compactUnarySigns));
     }
 
     /// <summary>

@@ -21,6 +21,7 @@ Public Sub RunAllSqlAnalysisFormatterTests(Optional ByVal showMessage As Boolean
     AnalyzeQueries_PreservesLeadingApostropheInOutput
     AnalyzeQueries_DisablesWrappingAfterWritingLongText
     AnalyzeQueries_RendersDeeplyNestedCaseConditions
+    AnalyzeQueries_NormalizesInvisibleOutputWhitespace
     AnalyzeQueries_RendersWrappedUpdateCaseAsTransferMethod
     AnalyzeQueries_HandlesSyntaxCharactersInFieldNames
     AnalyzeQueries_UsesStandaloneTableNameForSingleTable
@@ -221,6 +222,38 @@ Public Sub AnalyzeQueries_RendersDeeplyNestedCaseConditions()
     AssertCellValue wsOutput.Cells(10, 36), "OR"
     AssertCellValue wsOutput.Cells(10, 38), "tb1.h = 1)) " & W(&H2192) & " 'X'"
     AssertCellValue wsOutput.Cells(11, 32), "ELSE " & W(&H2192) & " 'Y'"
+End Sub
+
+'@TestMethod("AnalyzeQueries")
+' 出力するSQL断片の不可視空白を1スペースへ統一し、リテラル内の連続空白は保持することを確認
+Public Sub AnalyzeQueries_NormalizesInvisibleOutputWhitespace()
+    Dim wsRef As Worksheet
+    Dim wsSql As Worksheet
+    Dim wsOutput As Worksheet
+
+    If Not ExternalParserConfigured() Then Exit Sub
+
+    SetupWorkbook
+    Set wsRef = ThisWorkbook.Worksheets(ReferenceSheetName())
+    Set wsSql = ThisWorkbook.Worksheets(SqlSheetName())
+    Set wsOutput = ThisWorkbook.Worksheets(OutputSheetName())
+
+    wsRef.Range("A2:D200").ClearContents
+    wsSql.Range("A2:Z200").ClearContents
+    wsOutput.Cells.ClearContents
+    PutDefinition wsRef, 2, "tb1", "users", "name", "name"
+    wsSql.Cells(2, COL_SQL).Value = _
+        "SELECT CASE WHEN tb1.name" & vbTab & "  IS" & vbCrLf & _
+        " NULL THEN 'A  B' ELSE 'C' END AS result_name " & _
+        "FROM users AS tb1 WHERE tb1.name              = '1'"
+
+    AnalyzeQueries False
+
+    AssertCellValue wsOutput.Cells(3, 32), _
+        "tb1.name IS NULL " & W(&H2192) & " 'A  B'"
+    AssertCellValue wsOutput.Cells(4, 32), _
+        "ELSE " & W(&H2192) & " 'C'"
+    AssertCellValue wsOutput.Cells(5, 17), "tb1.name = '1'"
 End Sub
 
 '@TestMethod("AnalyzeQueries")

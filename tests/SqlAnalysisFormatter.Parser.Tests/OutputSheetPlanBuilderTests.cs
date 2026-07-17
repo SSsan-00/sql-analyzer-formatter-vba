@@ -960,6 +960,44 @@ public sealed class OutputSheetPlanBuilderTests
     }
 
     /// <summary>
+    /// CASE条件と通常条件の不可視空白を半角スペース1個へ統一し、リテラル内の空白は保持することを確認
+    /// </summary>
+    [TestMethod]
+    public void Build_NormalizesInvisibleWhitespaceOutsideSqlLiterals()
+    {
+        const string sql =
+            "SELECT CASE WHEN tb1.name\t  IS\r\n NULL " +
+            "THEN 'A  B' ELSE 'C' END AS result_name\r\n" +
+            "FROM users AS tb1\r\n" +
+            "WHERE tb1.name              = '1'";
+
+        var plan = OutputSheetPlanBuilder.Build(sql, [new("tb1", "ユーザー", "", "")]);
+
+        Assert.IsFalse(plan.IsFallback);
+        Assert.AreEqual("result_name", CellValue(plan, 3, 17));
+        Assert.AreEqual("tb1.name IS NULL → 'A  B'", CellValue(plan, 3, 32));
+        Assert.AreEqual("ELSE → 'C'", CellValue(plan, 4, 32));
+        Assert.AreEqual("tb1.name = '1'", CellValue(plan, 5, 17));
+    }
+
+    /// <summary>
+    /// 更新式を移送元へ出力する場合も不可視空白を半角スペース1個へ統一することを確認
+    /// </summary>
+    [TestMethod]
+    public void Build_NormalizesInvisibleWhitespaceInUpdateTransferExpression()
+    {
+        const string sql =
+            "UPDATE tb1 SET name = COALESCE(\t tb2.name,  'A  B')\r\n" +
+            "FROM users AS tb1 INNER JOIN import_users AS tb2\r\n" +
+            "ON tb1.user_id = tb2.user_id";
+
+        var plan = OutputSheetPlanBuilder.Build(sql, []);
+
+        Assert.IsFalse(plan.IsFallback);
+        Assert.AreEqual("COALESCE(tb2.name, 'A  B')", CellValue(plan, 4, 19));
+    }
+
+    /// <summary>
     /// 複雑条件の外側括弧だけを独立行へ展開することを確認
     /// </summary>
     [TestMethod]
