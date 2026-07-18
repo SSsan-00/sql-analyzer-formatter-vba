@@ -1052,7 +1052,6 @@
     {
       "id": "SEL-080",
       "title": "CASEごとにエイリアスがある集計取得項目",
-      "review_status": "暫定期待値（ユーザーレビュー待ち）",
       "sql_lines": [
         "select",
         "    sum( ",

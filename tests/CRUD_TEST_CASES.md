@@ -1724,6 +1724,7 @@ INSERT SELECTのトップレベルにUNIONまたはUNION ALLがある場合、SE
 | SEL-077 | INSERT SELECT内のUNION ALLをSELECT表と分岐別の移送パターンへ分けて表示 |
 | SEL-078 | 1式内の複数CASEを番号付きの結果へ分け、外側式から14列、分岐を結果から6列下げて表示 |
 | SEL-079 | 別々のCASE取得項目に`paid_amount`、`refund_amount`のエイリアスを表示 |
+| SEL-080 | 集計関数で包まれたCASE取得項目ごとにエイリアスと8列字下げした分岐を表示 |
 
 各SQLはScriptDomで構文エラーがないことと、A5M2 `Ctrl+Q`の実整形結果を確認済みです。
 
@@ -1736,6 +1737,5 @@ INSERT SELECTのトップレベルにUNIONまたはUNION ALLがある場合、SE
 | SEL-073 | TOP内のCASE | 暫定確定・レビュー待ち |
 | SEL-074 | OFFSET内のCASE | 暫定確定・レビュー待ち |
 | SEL-075 | 取得結果を直接返すCASE | 暫定確定・レビュー待ち |
-| SEL-080 | CASEごとにエイリアスがある集計取得項目 | レビュー用入力準備済み（登録期待値には未追加） |
 
 SEL-060、SEL-062からSEL-080はA5M2 2.21.2の`Ctrl+Q`形式に合わせた入力を使用しています。
