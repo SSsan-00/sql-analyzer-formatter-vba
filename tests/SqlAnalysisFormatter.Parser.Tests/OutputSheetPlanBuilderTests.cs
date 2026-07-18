@@ -1001,6 +1001,33 @@ public sealed class OutputSheetPlanBuilderTests
     }
 
     /// <summary>
+    /// CASEを包む集計式が別々の取得項目とエイリアスを持つ場合の配置を確認
+    /// </summary>
+    [TestMethod]
+    public void Build_UsesAliasesForSeparateWrappedCaseResults()
+    {
+        const string sql = """
+            SELECT
+                SUM(CASE WHEN tb1.状態 = 'PAID' THEN tb1.金額 ELSE 0 END) AS paid_amount,
+                SUM(CASE WHEN tb1.状態 = 'REFUND' THEN tb1.金額 ELSE 0 END) AS refund_amount
+            FROM
+                orders AS tb1
+            """;
+
+        var plan = OutputSheetPlanBuilder.Build(sql, [new("tb1", "注文", "", "")]);
+
+        Assert.AreEqual(6, plan.RowCount);
+        Assert.AreEqual("paid_amount", CellValue(plan, 3, 17));
+        Assert.AreEqual("SUM(CASE結果)", CellValue(plan, 3, 32));
+        Assert.AreEqual("tb1.状態 = 'PAID' → tb1.金額", CellValue(plan, 3, 40));
+        Assert.AreEqual("ELSE → 0", CellValue(plan, 4, 40));
+        Assert.AreEqual("refund_amount", CellValue(plan, 5, 17));
+        Assert.AreEqual("SUM(CASE結果)", CellValue(plan, 5, 32));
+        Assert.AreEqual("tb1.状態 = 'REFUND' → tb1.金額", CellValue(plan, 5, 40));
+        Assert.AreEqual("ELSE → 0", CellValue(plan, 6, 40));
+    }
+
+    /// <summary>
     /// ORで分岐する深い括弧条件を列階層へ展開することを確認
     /// </summary>
     [TestMethod]

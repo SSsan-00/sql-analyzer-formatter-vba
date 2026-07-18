@@ -1029,7 +1029,6 @@
     {
       "id": "SEL-079",
       "title": "エイリアス付きの複数CASE取得項目",
-      "review_status": "暫定期待値（ユーザーレビュー待ち）",
       "sql_lines": [
         "select",
         "    case ",
@@ -1042,6 +1041,34 @@
         "            then tb1.amount ",
         "        else 0 ",
         "        end as refund_amount ",
+        "from",
+        "    orders as tb1"
+      ],
+      "definitions": [
+        { "table_id": "tb1", "table_name_ja": "注文", "field_id": "status", "field_name_ja": "状態" },
+        { "table_id": "tb1", "table_name_ja": "注文", "field_id": "amount", "field_name_ja": "金額" }
+      ]
+    },
+    {
+      "id": "SEL-080",
+      "title": "CASEごとにエイリアスがある集計取得項目",
+      "review_status": "暫定期待値（ユーザーレビュー待ち）",
+      "sql_lines": [
+        "select",
+        "    sum( ",
+        "        case ",
+        "            when tb1.status = 'PAID' ",
+        "                then tb1.amount ",
+        "            else 0 ",
+        "            end",
+        "    ) as paid_amount",
+        "    , sum( ",
+        "        case ",
+        "            when tb1.status = 'REFUND' ",
+        "                then tb1.amount ",
+        "            else 0 ",
+        "            end",
+        "    ) as refund_amount ",
         "from",
         "    orders as tb1"
       ],

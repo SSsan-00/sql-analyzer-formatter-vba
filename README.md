@@ -165,10 +165,10 @@ powershell -ExecutionPolicy Bypass -File tools/run-output-golden-tests.ps1
 回帰テストの処理時間を計測する場合は、`run-output-golden-tests.ps1`に`-MeasurePerformance`を付けます。
 
 `run-vba-tests.ps1`は一時コピーしたブックに本体モジュールとVBAテストモジュールを取り込み、機能テストを実行します。
-`run-output-golden-tests.ps1`は本体モジュールと書式回帰テスト補助を取り込み、登録済み78ケースを比較します。
+`run-output-golden-tests.ps1`は本体モジュールと書式回帰テスト補助を取り込み、登録済み79ケースを比較します。
 保存済みの `SqlAnalysisFormatter.xlsm` にはテストモジュールを残しません。
 
-CRUDテストケースの内容は`tests/CRUD_TEST_CASES.md`、登録済み78出力ケースは`tests/OutputReportCases.json`と`tests/SqlAnalysisFormatter.OutputExpectations.xlsx`にまとめています。ユーザーレビュー待ちの4ケースは[暫定実装ケース](docs/PROVISIONAL_OUTPUT_CASES.md)で確認できます。
+CRUDテストケースの内容は`tests/CRUD_TEST_CASES.md`、登録済み79出力ケースは`tests/OutputReportCases.json`と`tests/SqlAnalysisFormatter.OutputExpectations.xlsx`にまとめています。ユーザーレビュー待ちの4ケースは[暫定実装ケース](docs/PROVISIONAL_OUTPUT_CASES.md)で確認できます。
 
 ### C# parser
 
