@@ -377,7 +377,6 @@
     },
     {
       "id": "SEL-075",
-      "review_status": "暫定確定（ユーザーレビュー未実施）",
       "sql_lines": ["select", "    case ", "        when tb1.状態 = 'ACTIVE' ", "            then 1 ", "        else 0 ", "        end ", "from", "    users as tb1"],
       "tables": { "tb1": "ユーザー" }
     },

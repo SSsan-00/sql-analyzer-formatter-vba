@@ -928,7 +928,6 @@
     {
       "id": "SEL-075",
       "title": "取得結果を直接返すCASE",
-      "review_status": "暫定確定（ユーザーレビュー未実施）",
       "sql_lines": [
         "select",
         "    case ",
