@@ -370,7 +370,6 @@
     },
     {
       "id": "SEL-074",
-      "review_status": "暫定確定（ユーザーレビュー未実施）",
       "sql_lines": ["select", "    tb1.ユーザーID ", "from", "    users as tb1 ", "order by", "    tb1.ユーザーID offset (case when @skip_rows = 1 then 10 else 0 end) rows fetch next 20 rows only"],
       "tables": { "tb1": "ユーザー" }
     },

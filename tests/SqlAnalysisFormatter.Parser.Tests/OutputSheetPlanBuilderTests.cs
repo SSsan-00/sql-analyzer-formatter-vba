@@ -412,8 +412,8 @@ public sealed class OutputSheetPlanBuilderTests
                 users AS tb1
             ORDER BY
                 tb1.ユーザーID
-            OFFSET (CASE WHEN @skip_rows = 1 THEN 10 ELSE 0 END) ROWS
-            FETCH NEXT 20 ROWS ONLY
+            offset (case when @skip_rows = 1 then 10 else 0 end) rows
+            fetch next 20 rows only
             """;
         MappingDefinition[] mappings = [new("tb1", "ユーザー", "", "")];
 
@@ -425,9 +425,9 @@ public sealed class OutputSheetPlanBuilderTests
         Assert.AreEqual("@all_rows = 1 → 100", CellValue(topPlan, 3, 17));
         Assert.AreEqual("ELSE → 10", CellValue(topPlan, 4, 17));
         Assert.AreEqual("OFFSET (CASE結果) ROWS FETCH NEXT 20 ROWS ONLY", CellValue(offsetPlan, 3, 7));
-        Assert.AreEqual("※", CellValue(offsetPlan, 3, 15));
-        Assert.AreEqual("@skip_rows = 1 → 10", CellValue(offsetPlan, 3, 17));
-        Assert.AreEqual("ELSE → 0", CellValue(offsetPlan, 4, 17));
+        Assert.AreEqual("※", CellValue(offsetPlan, 3, 27));
+        Assert.AreEqual("@skip_rows = 1 → 10", CellValue(offsetPlan, 3, 28));
+        Assert.AreEqual("ELSE → 0", CellValue(offsetPlan, 4, 28));
     }
 
     /// <summary>

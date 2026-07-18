@@ -15,7 +15,8 @@ internal static class SqlDisplayFormatter
         string sql,
         TSqlFragment fragment,
         bool uppercaseDateParts = false,
-        bool compactUnarySigns = false)
+        bool compactUnarySigns = false,
+        bool uppercaseOffsetKeywords = false)
     {
         if (fragment.StartOffset < 0 || fragment.FragmentLength <= 0 ||
             fragment.StartOffset + fragment.FragmentLength > sql.Length)
@@ -24,7 +25,7 @@ internal static class SqlDisplayFormatter
         }
 
         var text = sql.Substring(fragment.StartOffset, fragment.FragmentLength);
-        var replacements = CollectReplacements(fragment);
+        var replacements = CollectReplacements(fragment, uppercaseOffsetKeywords);
         var characters = text.ToCharArray();
         foreach (var replacement in replacements)
         {
@@ -62,7 +63,9 @@ internal static class SqlDisplayFormatter
     /// <summary>
     /// トークンと関数ASTから同じ長さの置換文字列を収集
     /// </summary>
-    private static IReadOnlyDictionary<int, string> CollectReplacements(TSqlFragment fragment)
+    private static IReadOnlyDictionary<int, string> CollectReplacements(
+        TSqlFragment fragment,
+        bool uppercaseOffsetKeywords)
     {
         var replacements = new Dictionary<int, string>();
         if (fragment.ScriptTokenStream is not null &&
@@ -72,7 +75,8 @@ internal static class SqlDisplayFormatter
             for (var index = fragment.FirstTokenIndex; index <= fragment.LastTokenIndex; index++)
             {
                 var token = fragment.ScriptTokenStream[index];
-                if (ShouldUppercase(token.TokenType))
+                if (ShouldUppercase(token.TokenType) ||
+                    uppercaseOffsetKeywords && ShouldUppercaseOffsetKeyword(token.Text))
                 {
                     replacements[token.Offset] = token.Text.ToUpperInvariant();
                 }
@@ -103,6 +107,19 @@ internal static class SqlDisplayFormatter
             TSqlTokenType.Or or
             TSqlTokenType.Then or
             TSqlTokenType.When;
+    }
+
+    /// <summary>
+    /// OFFSET/FETCH句を構成するキーワードだけを大文字へ統一
+    /// </summary>
+    private static bool ShouldUppercaseOffsetKeyword(string text)
+    {
+        return text.Equals("OFFSET", StringComparison.OrdinalIgnoreCase) ||
+            text.Equals("ROW", StringComparison.OrdinalIgnoreCase) ||
+            text.Equals("ROWS", StringComparison.OrdinalIgnoreCase) ||
+            text.Equals("FETCH", StringComparison.OrdinalIgnoreCase) ||
+            text.Equals("NEXT", StringComparison.OrdinalIgnoreCase) ||
+            text.Equals("ONLY", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>

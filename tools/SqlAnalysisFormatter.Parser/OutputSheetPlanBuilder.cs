@@ -13,6 +13,8 @@ public static class OutputSheetPlanBuilder
     private const int WrappedCaseBranchIndentColumns = 8;
     private const int WrappedMultipleCaseLabelIndentColumns = 14;
     private const int MultipleCaseBranchIndentColumns = 6;
+    private const int OffsetCaseMarkerColumn = 27;
+    private const int OffsetCaseDetailColumn = 28;
 
     /// <summary>
     /// 和名変換済みSQLから描画計画を作成
@@ -1039,7 +1041,10 @@ public static class OutputSheetPlanBuilder
             var cases = DirectCaseExpressions(query.OffsetClause);
             if (cases.Count == 0)
             {
-                cells.Add(new OutputCell(row, 7, FragmentText(sql, query.OffsetClause)));
+                cells.Add(new OutputCell(
+                    row,
+                    7,
+                    DisplayText(sql, query.OffsetClause, uppercaseOffsetKeywords: true)));
                 row++;
             }
             else
@@ -1047,9 +1052,18 @@ public static class OutputSheetPlanBuilder
                 cells.Add(new OutputCell(
                     row,
                     7,
-                    RenderExpressionWithCasePlaceholders(sql, query.OffsetClause, cases)));
-                cells.Add(new OutputCell(row, 15, "※"));
-                row += WriteEmbeddedCaseBranches(cells, sql, cases, row, 17);
+                    RenderExpressionWithCasePlaceholders(
+                        sql,
+                        query.OffsetClause,
+                        cases,
+                        uppercaseOffsetKeywords: true)));
+                cells.Add(new OutputCell(row, OffsetCaseMarkerColumn, "※"));
+                row += WriteEmbeddedCaseBranches(
+                    cells,
+                    sql,
+                    cases,
+                    row,
+                    OffsetCaseDetailColumn);
             }
             sections.Add(new OutputSection(OutputSectionKind.Standard, startRow, row - 1));
         }
@@ -1802,9 +1816,13 @@ public static class OutputSheetPlanBuilder
     private static string RenderExpressionWithCasePlaceholders(
         string sql,
         TSqlFragment expression,
-        IReadOnlyList<ScalarExpression> cases)
+        IReadOnlyList<ScalarExpression> cases,
+        bool uppercaseOffsetKeywords = false)
     {
-        var value = DisplayText(sql, expression);
+        var value = DisplayText(
+            sql,
+            expression,
+            uppercaseOffsetKeywords: uppercaseOffsetKeywords);
         for (var index = 0; index < cases.Count; index++)
         {
             var placeholder = cases.Count == 1
@@ -2619,10 +2637,16 @@ public static class OutputSheetPlanBuilder
         string sql,
         TSqlFragment fragment,
         bool uppercaseDateParts = false,
-        bool compactUnarySigns = false)
+        bool compactUnarySigns = false,
+        bool uppercaseOffsetKeywords = false)
     {
         return CompactSqlWhitespace(
-            SqlDisplayFormatter.Format(sql, fragment, uppercaseDateParts, compactUnarySigns));
+            SqlDisplayFormatter.Format(
+                sql,
+                fragment,
+                uppercaseDateParts,
+                compactUnarySigns,
+                uppercaseOffsetKeywords));
     }
 
     /// <summary>
