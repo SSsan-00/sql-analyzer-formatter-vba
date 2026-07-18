@@ -616,8 +616,42 @@ public sealed class OutputSheetPlanBuilderTests
             (3, 17, "paid_amount"),
             (3, 31, "※"),
             (3, 32, "SUM(CASE結果)"),
-            (3, 34, "tb1.状態 = 'PAID' → tb1.金額"),
-            (4, 34, "ELSE → 0"));
+            (3, 40, "tb1.状態 = 'PAID' → tb1.金額"),
+            (4, 40, "ELSE → 0"));
+    }
+
+    /// <summary>
+    /// 関数または演算で包まれたCASEの分岐を外側式から8列下げることを確認
+    /// </summary>
+    [TestMethod]
+    public void Build_IndentsCasesWrappedByFunctionsAndOperatorsByEightColumns()
+    {
+        const string functionSql = """
+            SELECT
+                COALESCE(CASE WHEN tb1.状態 = 'ACTIVE' THEN 1 ELSE 0 END, 0) AS active_value
+            FROM
+                users AS tb1
+            """;
+        const string operatorSql = """
+            SELECT
+                (CASE WHEN tb1.状態 = 'ACTIVE' THEN 1 ELSE 0 END) + 10 AS adjusted_value
+            FROM
+                users AS tb1
+            """;
+
+        var functionPlan = OutputSheetPlanBuilder.Build(
+            functionSql,
+            [new("tb1", "ユーザー", "", "")]);
+        var operatorPlan = OutputSheetPlanBuilder.Build(
+            operatorSql,
+            [new("tb1", "ユーザー", "", "")]);
+
+        Assert.AreEqual("COALESCE(CASE結果, 0)", CellValue(functionPlan, 3, 32));
+        Assert.AreEqual("tb1.状態 = 'ACTIVE' → 1", CellValue(functionPlan, 3, 40));
+        Assert.AreEqual("ELSE → 0", CellValue(functionPlan, 4, 40));
+        Assert.AreEqual("(CASE結果) + 10", CellValue(operatorPlan, 3, 32));
+        Assert.AreEqual("tb1.状態 = 'ACTIVE' → 1", CellValue(operatorPlan, 3, 40));
+        Assert.AreEqual("ELSE → 0", CellValue(operatorPlan, 4, 40));
     }
 
     /// <summary>
@@ -915,6 +949,7 @@ public sealed class OutputSheetPlanBuilderTests
 
     /// <summary>
     /// 同じ式に複数あるCASEを番号付きの結果と分岐へ展開することを確認
+    /// 配置はSEL-078でユーザーレビュー待ち
     /// </summary>
     [TestMethod]
     public void Build_ExpandsMultipleCasesInsideOneExpression()
@@ -931,12 +966,12 @@ public sealed class OutputSheetPlanBuilderTests
 
         Assert.AreEqual(6, plan.RowCount);
         Assert.AreEqual("SUM(CASE結果1) + SUM(CASE結果2)", CellValue(plan, 3, 32));
-        Assert.AreEqual("CASE結果1", CellValue(plan, 3, 34));
-        Assert.AreEqual("tb1.状態 = 'PAID' → tb1.金額", CellValue(plan, 3, 36));
-        Assert.AreEqual("ELSE → 0", CellValue(plan, 4, 36));
-        Assert.AreEqual("CASE結果2", CellValue(plan, 5, 34));
-        Assert.AreEqual("tb1.状態 = 'REFUND' → tb1.金額", CellValue(plan, 5, 36));
-        Assert.AreEqual("ELSE → 0", CellValue(plan, 6, 36));
+        Assert.AreEqual("CASE結果1", CellValue(plan, 3, 40));
+        Assert.AreEqual("tb1.状態 = 'PAID' → tb1.金額", CellValue(plan, 3, 42));
+        Assert.AreEqual("ELSE → 0", CellValue(plan, 4, 42));
+        Assert.AreEqual("CASE結果2", CellValue(plan, 5, 40));
+        Assert.AreEqual("tb1.状態 = 'REFUND' → tb1.金額", CellValue(plan, 5, 42));
+        Assert.AreEqual("ELSE → 0", CellValue(plan, 6, 42));
     }
 
     /// <summary>

@@ -10,6 +10,7 @@ namespace SqlAnalysisFormatter.Parser;
 public static class OutputSheetPlanBuilder
 {
     private const string MissingName = "(和名未取得)";
+    private const int WrappedCaseBranchIndentColumns = 8;
 
     /// <summary>
     /// 和名変換済みSQLから描画計画を作成
@@ -1417,7 +1418,12 @@ public static class OutputSheetPlanBuilder
             row,
             detailColumn,
             RenderExpressionWithCasePlaceholders(sql, expression, cases)));
-        return WriteEmbeddedCaseBranches(cells, sql, cases, row, detailColumn + 2);
+        return WriteEmbeddedCaseBranches(
+            cells,
+            sql,
+            cases,
+            row,
+            detailColumn + WrappedCaseBranchIndentColumns);
     }
 
     /// <summary>

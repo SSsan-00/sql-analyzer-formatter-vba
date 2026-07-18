@@ -1,7 +1,7 @@
 # 暫定実装ケース
 
 この資料は、ユーザーレビュー前の推測期待値で実装したケースを管理する。
-2026-07-17時点で、次の4ケースは回帰テストへ登録済みだが、最終レビューは未実施となる。
+2026-07-18時点で、登録済み期待値のうち3ケースは最終レビュー未実施となる。SEL-078は共通実装と単体テストまで行い、登録済み期待値へ追加せずレビューを待つ。
 
 ## 共通ルール
 
@@ -14,12 +14,12 @@
 
 | ケース | SQL概要 | 暫定期待値 |
 | --- | --- | --- |
-| SEL-068 | SUMの引数にあるCASE | 外側を`SUM(CASE結果)`と表示し、CASE分岐を右側へ複数行で出力する |
 | SEL-073 | TOP内のCASE | `取得件数`を`CASE結果`として分岐を右側へ出力する |
 | SEL-074 | OFFSET内のCASE | `取得範囲`のCASEを結果参照へ置換し、分岐を右側へ出力する |
 | SEL-075 | 取得結果を直接返すCASE | Q列へ`CASE結果`、AF列以降へ分岐を複数行で出力し、縮小表示しない |
+| SEL-078 | 1式内の複数CASE | 外側式をAF列へ表示し、`CASE結果1`と`CASE結果2`をAN列から展開する（レビュー待ち） |
 
-SQLはA5:SQL Mk-2 2.21.2の`Ctrl+Q`で実整形し、`tests/ManualOutputCases.json`へ保存している。
+SEL-073からSEL-075のSQLはA5:SQL Mk-2 2.21.2の`Ctrl+Q`で実整形している。SEL-078はSEL-068の整形規則に合わせたレビュー用入力として`tests/ManualOutputCases.json`へ保存している。
 
 ## 現在の制約
 
@@ -32,7 +32,7 @@ SQLはA5:SQL Mk-2 2.21.2の`Ctrl+Q`で実整形し、`tests/ManualOutputCases.js
 次のコマンドで対象ケースの元SQLと和名定義を開発用ブックへ投入する。
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File tools/Set-ManualOutputCase.ps1 -CaseId SEL-068
+powershell -ExecutionPolicy Bypass -File tools/Set-ManualOutputCase.ps1 -CaseId SEL-078
 ```
 
 `解析`を実行し、`アウトプット`シートを確認する。暫定期待値と異なる場合は、従来どおりシートへ正しい期待値を記入する。
