@@ -118,10 +118,17 @@ public static class OutputSheetPlanBuilder
             targetId,
             mappings);
         var targetName = ResolveTableName(targetId, mappings);
+        var sourceTableList = BuildTableList(
+            sourceQuery,
+            mappings,
+            sourceChildren.Where(child => !child.IsNamed).Select(child => child.Name));
+        var references = sourceTableList == "なし"
+            ? targetName
+            : $"{targetName}、{sourceTableList}";
         var transfers = BuildSelectTransfers(sql, targetColumns, sourceQuery.SelectElements);
         var transferPlan = BuildDataTransferPlan(
             sql,
-            targetName,
+            references,
             transfers,
             null,
             null,

@@ -1955,7 +1955,7 @@ public sealed class OutputSheetPlanBuilderTests
             (4, 15, ":"),
             (4, 17, "tb1.メール"),
             (6, 1, "＜データ移送表＞"),
-            (7, 1, "参照テーブル: ユーザー出力"),
+            (7, 1, "参照テーブル: ユーザー出力、ユーザー[tb1]"),
             (8, 1, "項目"),
             (8, 19, "移送元"),
             (8, 37, "移送方法ほか"),
@@ -2005,7 +2005,33 @@ public sealed class OutputSheetPlanBuilderTests
         Assert.AreEqual("COALESCE(tb1.氏名, tb1.メール)", CellValue(plan, displayNameRow, 37));
         Assert.AreEqual("tb1.ユーザーID", CellValue(plan, userCountRow, 19));
         Assert.AreEqual("COUNT(tb1.ユーザーID)", CellValue(plan, userCountRow, 37));
-        Assert.AreEqual("参照テーブル: ユーザー集計", plan.Cells.Single(cell => cell.Value.StartsWith("参照テーブル: ユーザー集計", StringComparison.Ordinal)).Value);
+        Assert.AreEqual(
+            "参照テーブル: ユーザー集計、ユーザー[tb1]",
+            plan.Cells.Single(cell => cell.Value.StartsWith(
+                "参照テーブル: ユーザー集計",
+                StringComparison.Ordinal)).Value);
+    }
+
+    /// <summary>
+    /// SELECT INTOの移送表へ未定義の移送先と和名解決済みの移送元を併記することを確認
+    /// </summary>
+    [TestMethod]
+    public void Build_ListsSelectIntoTargetAndSourceTablesInTransferReference()
+    {
+        const string sql = "SELECT tb1.__SAF_FIELD_R000002__ INTO #wkuser FROM users tb1;";
+        MappingDefinition[] mappings =
+        [
+            new("tb1", "ユーザー", "name", "名前", "__SAF_FIELD_R000002__")
+        ];
+
+        var plan = OutputSheetPlanBuilder.Build(sql, mappings);
+
+        Assert.IsFalse(plan.IsFallback);
+        var transferTitleRow = plan.Cells.Single(cell =>
+            cell.Column == 1 && cell.Value == "＜データ移送表＞").Row;
+        Assert.AreEqual(
+            "参照テーブル: (和名未取得)、ユーザー[tb1]",
+            CellValue(plan, transferTitleRow + 1, 1));
     }
 
     /// <summary>
@@ -2710,7 +2736,7 @@ public sealed class OutputSheetPlanBuilderTests
         var transferTitleRow = matchedPlan.Cells.Single(cell =>
             cell.Column == 1 && cell.Value == "＜データ移送表＞").Row;
         Assert.AreEqual(
-            "参照テーブル: 一時ユーザー",
+            "参照テーブル: 一時ユーザー、ユーザー[tb1]",
             CellValue(matchedPlan, transferTitleRow + 1, 1));
         Assert.AreEqual("全項目", CellValue(matchedPlan, transferTitleRow + 3, 1));
         Assert.AreEqual("tb1.全項目", CellValue(matchedPlan, transferTitleRow + 3, 19));
@@ -2719,7 +2745,7 @@ public sealed class OutputSheetPlanBuilderTests
         var unmatchedTransferTitleRow = unmatchedPlan.Cells.Single(cell =>
             cell.Column == 1 && cell.Value == "＜データ移送表＞").Row;
         Assert.AreEqual(
-            "参照テーブル: (和名未取得)",
+            "参照テーブル: (和名未取得)、ユーザー[tb1]",
             CellValue(unmatchedPlan, unmatchedTransferTitleRow + 1, 1));
     }
 
