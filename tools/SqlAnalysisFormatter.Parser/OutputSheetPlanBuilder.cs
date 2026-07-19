@@ -118,13 +118,12 @@ public static class OutputSheetPlanBuilder
             targetId,
             mappings);
         var targetName = ResolveTableName(targetId, mappings);
-        var sourceTableList = BuildTableList(
-            sourceQuery,
-            mappings,
-            sourceChildren.Where(child => !child.IsNamed).Select(child => child.Name));
-        var references = sourceTableList == "なし"
-            ? targetName
-            : $"{targetName}、{sourceTableList}";
+        var references = BuildTransferTableReferences(
+            targetName,
+            BuildSelectTableDisplays(
+                sourceQuery,
+                mappings,
+                sourceChildren.Where(child => !child.IsNamed).Select(child => child.Name)));
         var transfers = BuildSelectTransfers(sql, targetColumns, sourceQuery.SelectElements);
         var transferPlan = BuildDataTransferPlan(
             sql,
@@ -287,6 +286,7 @@ public static class OutputSheetPlanBuilder
                 mappings),
             ValuesInsertSource valuesSource => BuildInsertValues(
                 sql,
+                statement,
                 specification,
                 valuesSource,
                 mappings),
@@ -348,9 +348,15 @@ public static class OutputSheetPlanBuilder
             specification.Target,
             mappings,
             includeIdentifier: false);
+        var references = BuildTransferTableReferences(
+            targetDisplay,
+            BuildSelectTableDisplays(
+                sourceQuery,
+                mappings,
+                sourceChildren.Where(child => !child.IsNamed).Select(child => child.Name)));
         var transferPlan = BuildDataTransferPlan(
             sql,
-            targetDisplay,
+            references,
             transfers,
             null,
             null,
@@ -420,9 +426,15 @@ public static class OutputSheetPlanBuilder
             specification.Target,
             mappings,
             includeIdentifier: false);
+        var references = BuildTransferTableReferences(
+            targetDisplay,
+            BuildBinaryTableDisplays(
+                branches,
+                mappings,
+                sourceChildren.Where(child => !child.IsNamed).Select(child => child.Name)));
         var transferPlan = BuildLabeledDataTransferPlan(
             sql,
-            targetDisplay,
+            references,
             transferPatterns,
             index => $"＜移送パターン{index + 1}＞");
         plans.Add(ReplaceSubqueries(transferPlan, sql, sourceChildren));
@@ -452,6 +464,7 @@ public static class OutputSheetPlanBuilder
     /// </summary>
     private static OutputSheetPlan BuildInsertValues(
         string sql,
+        InsertStatement statement,
         InsertSpecification specification,
         ValuesInsertSource valuesSource,
         IReadOnlyList<MappingDefinition> mappings)
@@ -497,22 +510,33 @@ public static class OutputSheetPlanBuilder
             specification.Target,
             mappings,
             includeIdentifier: false);
+        var (subqueries, plans) = BuildLeadingSubqueryPlans(sql, statement, mappings);
+        var directChildren = DirectChildSubqueries(valuesSource, subqueries);
+        var references = BuildTransferTableReferences(
+            targetDisplay,
+            directChildren.Select(child => child.Name));
+        OutputSheetPlan transferPlan;
         if (transferRows.Count > 1)
         {
-            return BuildLabeledDataTransferPlan(
+            transferPlan = BuildLabeledDataTransferPlan(
                 sql,
-                targetDisplay,
+                references,
                 transferRows,
                 index => $"＜VALUES {index + 1}行目＞");
         }
+        else
+        {
+            transferPlan = BuildDataTransferPlan(
+                sql,
+                references,
+                transferRows[0],
+                null,
+                null,
+                mappings);
+        }
 
-        return BuildDataTransferPlan(
-            sql,
-            targetDisplay,
-            transferRows[0],
-            null,
-            null,
-            mappings);
+        plans.Add(ReplaceSubqueries(transferPlan, sql, directChildren));
+        return CombinePlans(plans);
     }
 
     /// <summary>
@@ -740,10 +764,9 @@ public static class OutputSheetPlanBuilder
         IEnumerable<string> additionalTables)
     {
         var targetDisplay = BuildTargetTableDisplay(target, mappings, includeIdentifier: true);
-        var displays = new[] { targetDisplay }
-            .Concat(BuildTableDisplays(fromClause, mappings, additionalTables))
-            .Distinct(StringComparer.OrdinalIgnoreCase);
-        return string.Join("、", displays);
+        return BuildTransferTableReferences(
+            targetDisplay,
+            BuildTableDisplays(fromClause, mappings, additionalTables));
     }
 
     /// <summary>
@@ -803,10 +826,10 @@ public static class OutputSheetPlanBuilder
             return CreateFallback(RawFragmentText(sql, binary), "複合クエリの分岐を取得できませんでした");
         }
 
-        var tableDisplays = branches
-            .SelectMany(branch => BuildTableDisplays(branch.FromClause, mappings, []))
-            .Concat(additionalTables)
-            .Distinct(StringComparer.OrdinalIgnoreCase);
+        var tableDisplays = BuildBinaryTableDisplays(
+            branches,
+            mappings,
+            additionalTables);
         var cells = new List<OutputCell>
         {
             new(1, 1, title),
@@ -2367,6 +2390,18 @@ public static class OutputSheetPlanBuilder
         IReadOnlyList<MappingDefinition> mappings,
         IEnumerable<string> additionalTables)
     {
+        var displays = BuildSelectTableDisplays(query, mappings, additionalTables);
+        return displays.Count == 0 ? "なし" : string.Join("、", displays);
+    }
+
+    /// <summary>
+    /// SELECTの参照テーブルを表示順・重複なしで列挙
+    /// </summary>
+    private static IReadOnlyList<string> BuildSelectTableDisplays(
+        QuerySpecification query,
+        IReadOnlyList<MappingDefinition> mappings,
+        IEnumerable<string> additionalTables)
+    {
         var localIdentifiers = (query.FromClause?.TableReferences
             .SelectMany(EnumerateTableIdentifiers)
             ?? [])
@@ -2378,7 +2413,37 @@ public static class OutputSheetPlanBuilder
             .Concat(BuildTableDisplays(query.FromClause, mappings, additionalTables))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
-        return displays.Length == 0 ? "なし" : string.Join("、", displays);
+        return displays;
+    }
+
+    /// <summary>
+    /// UNION各分岐の参照テーブルを表示順・重複なしで列挙
+    /// </summary>
+    private static IReadOnlyList<string> BuildBinaryTableDisplays(
+        IEnumerable<QuerySpecification> branches,
+        IReadOnlyList<MappingDefinition> mappings,
+        IEnumerable<string> additionalTables)
+    {
+        return branches
+            .SelectMany(branch => BuildTableDisplays(branch.FromClause, mappings, []))
+            .Concat(additionalTables)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    /// <summary>
+    /// データ移送表の移送先と移送元テーブルを表示順・重複なしで統合
+    /// </summary>
+    private static string BuildTransferTableReferences(
+        string targetDisplay,
+        IEnumerable<string> sourceDisplays)
+    {
+        return string.Join(
+            "、",
+            new[] { targetDisplay }
+                .Concat(sourceDisplays)
+                .Where(display => display.Length > 0 && display != "なし")
+                .Distinct(StringComparer.OrdinalIgnoreCase));
     }
 
     /// <summary>

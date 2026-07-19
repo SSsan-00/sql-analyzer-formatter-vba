@@ -131,10 +131,12 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\SqlAnalysisFormatter.u
 | SELECTを含まないDELETE、UPDATE | `＜データ移送表＞` |
 | SELECTを含むDELETE、UPDATE | 内側の`サブクエリ[名前]`、`＜データ移送表＞` |
 
-- SELECT INTOとINSERT SELECTのトップレベルSELECTは人工的なサブクエリへ分けず、`＜DB入出力項目定義＞`へ出力します。各取得式はデータ移送表の同じ位置にある対象項目へ直接対応させます。SELECT INTOのデータ移送表では、参照テーブルを移送先、移送元の順に`、`区切りで表示します（例: `(和名未取得)、ユーザー[tb1]`）。
+- SELECT INTOとINSERT SELECTのトップレベルSELECTは人工的なサブクエリへ分けず、`＜DB入出力項目定義＞`へ出力します。各取得式はデータ移送表の同じ位置にある対象項目へ直接対応させます。
+- SELECT INTO、INSERT、UPDATE、DELETEのデータ移送表では、参照テーブルを移送先、移送元の順に`、`区切りで表示します（例: `(和名未取得)、ユーザー[tb1]`）。移送元テーブルを持たない通常のINSERT VALUESは移送先だけを表示し、値式にスカラーサブクエリがあれば移送先、`SQn`の順に表示します。
 - SELECT INTOとINSERT SELECT内に実在するサブクエリ、CTE、派生テーブルは、トップレベルSELECTより先に`サブクエリ[名前]`として出力します。
 - 更新系SQLにSELECT処理が含まれる場合は、SELECTの解析表を先、最終的なデータ移送表を後に出力します。
 - UPDATEの検索条件に`EXISTS`、`IN (SELECT ...)`、比較用サブクエリがある場合も、SELECTを`サブクエリ[SQn]`へ分け、データ移送表の検索条件からSQ名で参照します。
+- INSERT VALUESの値式にスカラーサブクエリがある場合も、SELECTを`サブクエリ[SQn]`へ分け、データ移送表の移送元からSQ名で参照します。
 - FROM句がないUPDATEでも、更新対象テーブルをデータ移送表の参照テーブルへ表示します。
 - WITH句は名前付きサブクエリとして扱います。
 - ネストしたサブクエリは内側から外側、最後にクエリ全体の順で出力します。

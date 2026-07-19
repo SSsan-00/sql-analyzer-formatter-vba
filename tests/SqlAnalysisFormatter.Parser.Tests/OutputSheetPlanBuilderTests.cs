@@ -1426,7 +1426,7 @@ public sealed class OutputSheetPlanBuilderTests
             (6, 1, "検索条件"),
             (6, 17, "tb1.削除日時 < @archive_before"),
             (8, 1, "＜データ移送表＞"),
-            (9, 1, "参照テーブル: ユーザーアーカイブ"),
+            (9, 1, "参照テーブル: ユーザーアーカイブ、ユーザー[tb1]"),
             (10, 1, "項目"),
             (10, 19, "移送元"),
             (10, 37, "移送方法ほか"),
@@ -1497,7 +1497,7 @@ public sealed class OutputSheetPlanBuilderTests
             (9, 1, "検索条件"),
             (9, 17, "tb2.状態 = 'INACTIVE'"),
             (11, 1, "＜データ移送表＞"),
-            (12, 1, "参照テーブル: ユーザーアーカイブ"),
+            (12, 1, "参照テーブル: ユーザーアーカイブ、ユーザー[tb1]、退会ユーザー[tb2]"),
             (13, 1, "＜移送パターン1＞"),
             (14, 1, "項目"),
             (14, 19, "移送元"),
@@ -1613,6 +1613,8 @@ public sealed class OutputSheetPlanBuilderTests
         Assert.AreEqual(1, plan.Cells.Count(cell => cell.Value == "＜データ移送表＞"));
         Assert.IsFalse(plan.Cells.Any(cell => cell.Value == "サブクエリ[SQ1]"));
         Assert.IsTrue(plan.Cells.Any(cell =>
+            cell.Value == "参照テーブル: ユーザーアーカイブ、対象ユーザー[active_users]、退会ユーザー[tb2]"));
+        Assert.IsTrue(plan.Cells.Any(cell =>
             cell.Column == 19 && cell.Value == "active_users.ユーザーID"));
         Assert.IsTrue(plan.Cells.Any(cell =>
             cell.Column == 19 && cell.Value == "tb2.ユーザーID"));
@@ -1664,7 +1666,9 @@ public sealed class OutputSheetPlanBuilderTests
         Assert.AreEqual("集計条件", CellValue(plan, 15, 1));
         Assert.AreEqual("COUNT(tb2.注文ID) >= @min_order_count", CellValue(plan, 15, 17));
         Assert.AreEqual("＜データ移送表＞", CellValue(plan, 17, 1));
-        Assert.AreEqual("参照テーブル: ユーザー集計", CellValue(plan, 18, 1));
+        Assert.AreEqual(
+            "参照テーブル: ユーザー集計、ユーザー[tb1]、注文[tb2]",
+            CellValue(plan, 18, 1));
         Assert.AreEqual("tb1.氏名、tb1.メール", CellValue(plan, 21, 19));
         Assert.AreEqual("COALESCE(tb1.氏名, tb1.メール)", CellValue(plan, 21, 37));
         Assert.AreEqual("tb2.注文ID", CellValue(plan, 22, 19));
@@ -1762,6 +1766,37 @@ public sealed class OutputSheetPlanBuilderTests
         Assert.AreEqual(10, plan.Sections[2].StartRow);
         Assert.AreEqual(14, plan.Sections[2].EndRow);
         Assert.IsFalse(plan.Sections.Any(section => section.StartRow is 3 or 9));
+    }
+
+    /// <summary>
+    /// INSERT VALUES内の実在するスカラーサブクエリを先行表と移送先・移送元参照へ分離することを確認
+    /// </summary>
+    [TestMethod]
+    public void Build_CreatesInsertValuesScalarSubqueryTransferFrame()
+    {
+        const string sql = """
+            INSERT INTO user_snapshots(ユーザーID)
+            VALUES
+                ((SELECT TOP (1) tb1.ユーザーID
+                  FROM users AS tb1
+                  ORDER BY tb1.更新日時 DESC))
+            """;
+        MappingDefinition[] mappings =
+        [
+            new("user_snapshots", "ユーザースナップショット", "", ""),
+            new("tb1", "ユーザー", "", ""),
+            new("tb1", "ユーザー", "ユーザーID", "ユーザーID"),
+            new("tb1", "ユーザー", "更新日時", "更新日時")
+        ];
+
+        var plan = OutputSheetPlanBuilder.Build(sql, mappings);
+
+        Assert.IsFalse(plan.IsFallback);
+        Assert.AreEqual(1, plan.Cells.Count(cell => cell.Value == "サブクエリ[SQ1]"));
+        Assert.IsTrue(plan.Cells.Any(cell =>
+            cell.Value == "参照テーブル: ユーザースナップショット、SQ1"));
+        Assert.IsTrue(plan.Cells.Any(cell =>
+            cell.Column == 19 && cell.Value == "(SQ1)"));
     }
 
     /// <summary>
