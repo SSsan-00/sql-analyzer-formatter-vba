@@ -57,7 +57,7 @@ Public Sub AnalyzeQueries(Optional ByVal showMessage As Boolean = True)
 
     Set wsRef = GetReferenceSheet()
     Set wsSql = GetSqlSheet()
-    Set wsOutput = GetOutputSheet()
+    Set wsOutput = GetOutputSheet(False)
     Set qualifiedMap = CreateTextDictionary()
     Set standaloneMap = CreateTextDictionary()
     Set qualifiedParserMap = CreateTextDictionary()
@@ -77,7 +77,7 @@ Public Sub AnalyzeQueries(Optional ByVal showMessage As Boolean = True)
 
     lastRow = LastUsedRowInColumn(wsSql, COL_SQL)
     ClearAnalyzeOutput wsSql, lastRow
-    ClearOutputSheet wsOutput
+    ClearOutputSheet wsOutput, False
 
     For rowNumber = 2 To lastRow
         sourceText = CStr(wsSql.Cells(rowNumber, COL_SQL).Value)
@@ -104,6 +104,8 @@ Public Sub AnalyzeQueries(Optional ByVal showMessage As Boolean = True)
         If Not TryWriteExternalOutputPlan(wsOutput, wsRef, parserQueryText, fallbackReason) Then
             WriteFallbackOutput wsOutput, convertedQueryText, fallbackReason
         End If
+    Else
+        ApplyOutputSheetLayout wsOutput
     End If
 
     wsSql.Range(wsSql.Cells(1, COL_RESULT), wsSql.Cells(MaxLong(lastRow, 1), COL_RESULT)).WrapText = False
@@ -128,7 +130,7 @@ Public Sub ClearData(Optional ByVal showMessage As Boolean = True)
 
     Set wsRef = GetReferenceSheet()
     Set wsSql = GetSqlSheet()
-    Set wsOutput = GetOutputSheet()
+    Set wsOutput = GetOutputSheet(False)
 
     ClearRowsBelowHeader wsRef, COL_FIELD_NAME
     ClearRowsBelowHeader wsSql, COL_REPLACEMENT
@@ -476,11 +478,11 @@ Private Function GetSqlSheet() As Worksheet
 End Function
 
 ' アウトプットシートを取得
-Private Function GetOutputSheet() As Worksheet
+Private Function GetOutputSheet(Optional ByVal applyLayout As Boolean = True) As Worksheet
     Dim ws As Worksheet
 
     Set ws = ResolveOrCreateSheet(OutputSheetName(), OutputSheetName(), 3)
-    ApplyOutputSheetLayout ws
+    If applyLayout Then ApplyOutputSheetLayout ws
     Set GetOutputSheet = ws
 End Function
 
@@ -1123,7 +1125,7 @@ Private Sub WriteFallbackOutput(ByVal wsOutput As Worksheet, ByVal queryText As 
     Dim reasonRow As Long
     Dim queryEndRow As Long
 
-    ClearOutputSheet wsOutput
+    ClearOutputSheet wsOutput, False
     normalizedText = Replace(queryText, vbCrLf, vbLf)
     normalizedText = Replace(normalizedText, vbCr, vbLf)
     normalizedText = TrimOuterLineBreaks(normalizedText)
@@ -1513,7 +1515,7 @@ Private Sub RestoreFindSearchOrderByRows(ByVal ws As Worksheet)
 End Sub
 
 ' アウトプットシートの内容と前回の表書式をクリア
-Private Sub ClearOutputSheet(ByVal ws As Worksheet)
+Private Sub ClearOutputSheet(ByVal ws As Worksheet, Optional ByVal applyLayout As Boolean = True)
     Dim clearLastRow As Long
 
     clearLastRow = LastOutputRow(ws)
@@ -1521,7 +1523,7 @@ Private Sub ClearOutputSheet(ByVal ws As Worksheet)
         .ClearContents
         .ClearFormats
     End With
-    ApplyOutputSheetLayout ws
+    If applyLayout Then ApplyOutputSheetLayout ws
 End Sub
 
 ' アウトプット範囲の最終使用行を取得

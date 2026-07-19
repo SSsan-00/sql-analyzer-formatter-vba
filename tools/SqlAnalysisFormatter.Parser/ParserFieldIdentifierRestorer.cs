@@ -51,6 +51,11 @@ internal static class ParserFieldIdentifierRestorer
         string value,
         IReadOnlyDictionary<string, string> replacements)
     {
+        if (!value.Contains(ParserFieldPrefix, StringComparison.Ordinal))
+        {
+            return value;
+        }
+
         var result = new StringBuilder(value.Length);
         var currentIndex = 0;
         while (currentIndex < value.Length)

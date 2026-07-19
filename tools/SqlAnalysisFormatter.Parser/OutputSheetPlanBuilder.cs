@@ -668,7 +668,7 @@ public static class OutputSheetPlanBuilder
             var itemStartRow = row;
             cells.Add(new OutputCell(row, 1, transfer.Target));
             if (transfer.Expression is not null &&
-                DirectCaseExpressions(transfer.Expression).Count > 0)
+                transfer.DirectCases is { Count: > 0 })
             {
                 if (transfer.RenderCaseInMethod && transfer.Source.Length > 0)
                 {
@@ -683,7 +683,8 @@ public static class OutputSheetPlanBuilder
                         displayName: null,
                         valueColumn: 37,
                         markerColumn: 51,
-                        detailColumn: 52)
+                        detailColumn: 52,
+                        directCases: transfer.DirectCases)
                     : WriteScalarExpression(
                         cells,
                         sql,
@@ -692,7 +693,8 @@ public static class OutputSheetPlanBuilder
                         displayName: null,
                         valueColumn: 19,
                         markerColumn: 35,
-                        detailColumn: 37);
+                        detailColumn: 37,
+                        directCases: transfer.DirectCases);
                 row += consumedRows;
                 if (transfer.RenderCaseInMethod && consumedRows > 1)
                 {
@@ -916,32 +918,54 @@ public static class OutputSheetPlanBuilder
             return plan;
         }
 
+        var replacements = subqueries
+            .Select(subquery => CreateSubqueryReplacement(sql, subquery))
+            .ToArray();
         var cells = plan.Cells.Select(cell =>
         {
             var value = cell.Value;
-            foreach (var subquery in subqueries)
+            foreach (var replacement in replacements)
             {
-                var sourceTexts = new[]
+                foreach (var sourceText in replacement.SourceTexts)
                 {
-                    RawFragmentText(sql, subquery.QueryExpression),
-                    FragmentText(sql, subquery.QueryExpression),
-                    DisplayText(sql, subquery.QueryExpression)
-                };
-                foreach (var sourceText in sourceTexts
-                    .Where(text => text.Length > 0)
-                    .Distinct(StringComparer.Ordinal))
-                {
-                    value = value.Replace(sourceText, subquery.Name, StringComparison.Ordinal);
+                    value = value.Replace(sourceText, replacement.Name, StringComparison.Ordinal);
                 }
-                value = Regex.Replace(
-                    value,
-                    @"\(\s*" + Regex.Escape(subquery.Name) + @"\s*\)",
-                    "(" + subquery.Name + ")",
-                    RegexOptions.CultureInvariant);
+
+                if (value.Contains(replacement.Name, StringComparison.Ordinal))
+                {
+                    value = replacement.ParenthesizedNamePattern.Replace(
+                        value,
+                        "(" + replacement.Name + ")");
+                }
             }
-            return cell with { Value = value };
+            return value == cell.Value ? cell : cell with { Value = value };
         }).ToArray();
         return plan with { Cells = cells };
+    }
+
+    /// <summary>
+    /// サブクエリ置換で全セルに共通するSQL表記と正規表現を事前計算
+    /// </summary>
+    private static SubqueryReplacement CreateSubqueryReplacement(
+        string sql,
+        SubqueryInfo subquery)
+    {
+        var sourceTexts = new[]
+        {
+            RawFragmentText(sql, subquery.QueryExpression),
+            FragmentText(sql, subquery.QueryExpression),
+            DisplayText(sql, subquery.QueryExpression)
+        }
+            .Where(text => text.Length > 0)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        var parenthesizedNamePattern = new Regex(
+            @"\(\s*" + Regex.Escape(subquery.Name) + @"\s*\)",
+            RegexOptions.CultureInvariant);
+        return new SubqueryReplacement(
+            subquery.Name,
+            sourceTexts,
+            parenthesizedNamePattern);
     }
 
     /// <summary>
@@ -1391,9 +1415,10 @@ public static class OutputSheetPlanBuilder
         string valueSuffix = "",
         int valueColumn = 17,
         int markerColumn = 31,
-        int detailColumn = 32)
+        int detailColumn = 32,
+        IReadOnlyList<ScalarExpression>? directCases = null)
     {
-        var cases = DirectCaseExpressions(expression);
+        var cases = directCases ?? DirectCaseExpressions(expression);
         if (cases.Count == 0)
         {
             if (displayName is null)
@@ -2350,18 +2375,6 @@ public static class OutputSheetPlanBuilder
     }
 
     /// <summary>
-    /// FROM句と追加参照名から参照テーブル一覧を作成
-    /// </summary>
-    private static string BuildTableList(
-        FromClause? fromClause,
-        IReadOnlyList<MappingDefinition> mappings,
-        IEnumerable<string> additionalTables)
-    {
-        var displays = BuildTableDisplays(fromClause, mappings, additionalTables);
-        return displays.Count == 0 ? "なし" : string.Join("、", displays);
-    }
-
-    /// <summary>
     /// FROM句を重複のないテーブル表示へ変換
     /// </summary>
     private static IReadOnlyList<string> BuildTableDisplays(
@@ -2565,19 +2578,6 @@ public static class OutputSheetPlanBuilder
                 }
                 break;
         }
-    }
-
-    /// <summary>
-    /// 取得項目から式本体を表示
-    /// </summary>
-    private static string RenderSelectElement(string sql, SelectElement element)
-    {
-        return element switch
-        {
-            SelectScalarExpression scalar => FragmentText(sql, scalar.Expression),
-            SelectStarExpression star => RenderSelectStar(FragmentText(sql, star)),
-            _ => FragmentText(sql, element)
-        };
     }
 
     /// <summary>
@@ -2922,7 +2922,8 @@ public static class OutputSheetPlanBuilder
         string expressionText,
         ScalarExpression expression)
     {
-        if (DirectCaseExpressions(expression).Count > 0)
+        var directCases = DirectCaseExpressions(expression);
+        if (directCases.Count > 0)
         {
             var sources = CollectCaseAwareSources(sql, expression);
             return new TransferItem(
@@ -2930,7 +2931,8 @@ public static class OutputSheetPlanBuilder
                 string.Join("、", sources),
                 expressionText,
                 expression,
-                RenderCaseInMethod: true);
+                RenderCaseInMethod: true,
+                DirectCases: directCases);
         }
 
         return CreateTransferItem(sql, target, expressionText, expression);
@@ -3174,6 +3176,11 @@ public static class OutputSheetPlanBuilder
 
     private sealed record SubqueryInfo(QueryExpression QueryExpression, string Name, bool IsNamed);
 
+    private sealed record SubqueryReplacement(
+        string Name,
+        IReadOnlyList<string> SourceTexts,
+        Regex ParenthesizedNamePattern);
+
     /// <summary>
     /// 式内の列参照を出現順に収集し、サブクエリ内部は別フレームへ委ねる
     /// </summary>
@@ -3356,7 +3363,8 @@ public static class OutputSheetPlanBuilder
         string Source,
         string Method,
         ScalarExpression? Expression = null,
-        bool RenderCaseInMethod = false);
+        bool RenderCaseInMethod = false,
+        IReadOnlyList<ScalarExpression>? DirectCases = null);
 
     private sealed record ConditionPart(string Connector, BooleanExpression Expression);
 
