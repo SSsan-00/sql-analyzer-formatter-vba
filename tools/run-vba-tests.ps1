@@ -1,6 +1,7 @@
 param(
     [string]$ParserExePath = '',
-    [string[]]$TestName = @()
+    [string[]]$TestName = @(),
+    [switch]$UseEmbeddedMainModule
 )
 
 $ErrorActionPreference = 'Stop'
@@ -44,7 +45,11 @@ try {
     $vbProject = $workbook.VBProject
     $components = $vbProject.VBComponents
 
-    foreach ($moduleName in @('SqlAnalysisFormatter', 'SqlAnalysisFormatterTests')) {
+    $modulesToRemove = @('SqlAnalysisFormatterTests')
+    if (-not $UseEmbeddedMainModule) {
+        $modulesToRemove += 'SqlAnalysisFormatter'
+    }
+    foreach ($moduleName in $modulesToRemove) {
         $existingComponent = $null
         try {
             $existingComponent = $components.Item($moduleName)
@@ -55,8 +60,10 @@ try {
         }
     }
 
-    $importedComponent = $components.Import($mainModulePath)
-    Release-ComObject $importedComponent
+    if (-not $UseEmbeddedMainModule) {
+        $importedComponent = $components.Import($mainModulePath)
+        Release-ComObject $importedComponent
+    }
     $importedComponent = $components.Import($testModulePath)
     Release-ComObject $importedComponent
     $testMacros = @(

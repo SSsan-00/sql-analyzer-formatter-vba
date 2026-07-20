@@ -33,6 +33,13 @@ powershell -ExecutionPolicy Bypass -File tools/run-vba-tests.ps1 -ParserExePath 
 powershell -ExecutionPolicy Bypass -File tools/run-output-golden-tests.ps1
 ```
 
+配布用マクロブックを更新するときは、最新VBAの同期と初期化を行った後、埋め込みVBAをそのまま使う試験でparserとの整合を確認します。
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools/sync-workbook-vba.ps1
+powershell -ExecutionPolicy Bypass -File tools/run-vba-tests.ps1 -ParserExePath dist/parser/SqlAnalysisFormatter.Parser.exe -UseEmbeddedMainModule
+```
+
 `run-output-golden-tests.ps1` はユーザーレビュー済み80ケースについてセル値、主要罫線、塗り、フォント、折り返し、縮小表示、行高、列幅、目盛り線を実 Excel で比較します。
 各処理の所要時間を確認する場合は`-MeasurePerformance`を付けます。
 

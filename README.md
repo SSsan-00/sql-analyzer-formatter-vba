@@ -163,6 +163,13 @@ powershell -ExecutionPolicy Bypass -File tools/run-vba-tests.ps1 -ParserExePath 
 powershell -ExecutionPolicy Bypass -File tools/run-output-golden-tests.ps1
 ```
 
+配布用マクロブックへ最新VBAを反映し、クリア済み・A1選択状態へ初期化する場合は次を実行します。反映後は、埋め込みVBAを差し替えない試験でparserとの整合も確認します。
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools/sync-workbook-vba.ps1
+powershell -ExecutionPolicy Bypass -File tools/run-vba-tests.ps1 -ParserExePath dist/parser/SqlAnalysisFormatter.Parser.exe -UseEmbeddedMainModule
+```
+
 回帰テストの処理時間を計測する場合は、`run-output-golden-tests.ps1`に`-MeasurePerformance`を付けます。
 
 `run-vba-tests.ps1`は一時コピーしたブックに本体モジュールとVBAテストモジュールを取り込み、機能テストを実行します。
