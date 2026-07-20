@@ -1,7 +1,7 @@
 # 暫定実装ケース
 
-この資料は、ユーザーレビュー前の推測期待値で実装したケースを管理する。
-2026-07-20時点で、登録済み80ケースはすべて最終レビュー済みであり、SEL-081を追加レビュー中である。
+この資料は、ユーザーレビュー前の推測期待値または現行実装出力を管理する。
+2026-07-20時点で、登録済み81ケースはすべて最終レビュー済みであり、SEL-082を追加レビュー中である。
 
 ## 共通ルール
 
@@ -14,9 +14,9 @@
 
 | ケース | SQL概要 | 現行実装の出力 |
 | --- | --- | --- |
-| SEL-081 | THEN・ELSE両側の深いネストCASE | 最上位のTHEN・ELSEをAF列、次のネストをAH列、最深部をAJ列に配置し、親分岐と各CASEの先頭分岐を同じ行へ直接連結する |
+| SEL-082 | 複合条件を持つTHEN・ELSE両側の深いネストCASE | 各WHENの括弧を保持し、`((a OR b) AND (c OR d))`をAND、OR、末端条件の階層へ2列ずつ分けながら、3段のCASEネストも同時に展開する |
 
-SEL-081は最上位CASEのTHEN・ELSEがどちらもCASEとなり、その内側のTHEN・ELSEもさらにCASEとなる3段構造である。`tests/SqlAnalysisFormatter.OutputExpectations.xlsx`のSEL-081シートには、仕様確定前の基準として現行実装の解析結果を保存している。
+SEL-082はSEL-081と同じ3段構造を使い、7つあるすべてのWHENをAND、OR、括弧が混在する複合条件に置き換えている。`tests/SqlAnalysisFormatter.OutputExpectations.xlsx`のSEL-082シートには、仕様確定前の基準として現行実装の解析結果を保存している。
 
 ## 現在の制約
 
@@ -29,8 +29,8 @@ SEL-081は最上位CASEのTHEN・ELSEがどちらもCASEとなり、その内側
 新しい暫定ケースを追加した場合は、次のコマンドで元SQLと和名定義を開発用ブックへ投入する。
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File tools/Set-ManualOutputCase.ps1 -CaseId SEL-081
+powershell -ExecutionPolicy Bypass -File tools/Set-ManualOutputCase.ps1 -CaseId SEL-082
 ```
 
 `解析`を実行し、`アウトプット`シートを確認する。暫定期待値と異なる場合は、従来どおりシートへ正しい期待値を記入する。
-レビュー確定後は、`tests/SqlAnalysisFormatter.OutputExpectations.xlsx`、両JSONの`review_status`、本資料を同じ変更で更新する。
+レビュー確定後は、`tests/SqlAnalysisFormatter.OutputExpectations.xlsx`、`ManualOutputCases.json`の`review_status`、`OutputReportCases.json`への登録、本資料を同じ変更で更新する。

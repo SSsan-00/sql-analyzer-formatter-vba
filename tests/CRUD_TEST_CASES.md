@@ -1728,19 +1728,20 @@ INSERT SELECTのトップレベルにUNIONまたはUNION ALLがある場合、SE
 | SEL-078 | 1式内の複数CASEを番号付きの結果へ分け、外側式から14列、分岐を結果から6列下げて表示 |
 | SEL-079 | 別々のCASE取得項目に`paid_amount`、`refund_amount`のエイリアスを表示 |
 | SEL-080 | 集計関数で包まれたCASE取得項目ごとにエイリアスと8列字下げした分岐を表示 |
+| SEL-081 | THEN・ELSE両側を3段までネストし、親分岐と各CASEの先頭分岐を直接連結して表示 |
 | SEL-075 | 取得結果を直接返すCASEを`CASE結果`として分岐とともに表示 |
 | SEL-073 | TOP内のCASEを`取得件数`の`CASE結果`として分岐とともに表示 |
 | SEL-074 | OFFSET内のCASEを大文字の取得範囲へ置換し、分岐をAA/AB列へ表示 |
 
-各SQLはScriptDomで構文エラーがないことと、A5M2 `Ctrl+Q`の実整形結果を確認済みです。
+SEL-080までの各SQLはScriptDomで構文エラーがないことと、A5M2 `Ctrl+Q`の実整形結果を確認済みです。SEL-081はScriptDomで解析できることと現行出力をユーザーレビューで確認済みです。
 
 ## 期待値レビュー待ち
 
 | ケース | 内容 |
 | --- | --- |
-| SEL-081 | THEN・ELSE両側を3段までネストしたCASEの現行実装出力をレビューする |
+| SEL-082 | 3段ネストCASEの全WHENをAND・OR・括弧の複合条件にした現行実装出力をレビューする |
 
-SEL-081は`tests/ManualOutputCases.json`と期待値ブックのレビュー専用シートへ登録し、`OutputReportCases.json`には未登録です。期待値レビュー後に失敗テストへ追加してTDDを開始します。
+SEL-082は`tests/ManualOutputCases.json`と期待値ブックのレビュー専用シートへ登録し、`OutputReportCases.json`には未登録です。期待値レビュー後に失敗テストへ追加してTDDを開始します。
 
 ## 暫定実装済み・ユーザーレビュー待ち
 
