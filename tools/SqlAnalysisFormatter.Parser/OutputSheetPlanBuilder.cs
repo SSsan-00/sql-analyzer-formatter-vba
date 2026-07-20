@@ -1990,6 +1990,108 @@ public static class OutputSheetPlanBuilder
     }
 
     /// <summary>
+    /// ネストCASE用に、先頭の括弧グループと外側条件を同じ段落にし、
+    /// 後続グループだけ1段ずつ深くした条件部品を作成
+    /// </summary>
+    private static IReadOnlyList<CaseConditionPart> BuildStructuredCaseConditionParts(
+        BooleanExpression expression,
+        bool isNestedCase)
+    {
+        var parts = new List<CaseConditionPart>();
+        AddStructuredCaseConditionParts(
+            expression,
+            connector: string.Empty,
+            connectorDepth: 0,
+            operatorDepth: isNestedCase ? 1 : 0,
+            isFirstPart: true,
+            parts);
+        return parts;
+    }
+
+    /// <summary>
+    /// 論理二項式を左から展開し、演算子とオペランドの相対階層を記録
+    /// </summary>
+    private static void AddStructuredCaseConditionParts(
+        BooleanExpression expression,
+        string connector,
+        int connectorDepth,
+        int operatorDepth,
+        bool isFirstPart,
+        List<CaseConditionPart> parts)
+    {
+        var openingParentheses = 0;
+        while (expression is BooleanParenthesisExpression parenthesized)
+        {
+            openingParentheses++;
+            expression = parenthesized.Expression;
+        }
+
+        var firstPartIndex = parts.Count;
+        if (expression is BooleanBinaryExpression binary)
+        {
+            var operands = CollectBooleanOperands(binary, binary.BinaryExpressionType);
+            for (var index = 0; index < operands.Count; index++)
+            {
+                var operand = operands[index];
+                var operandCore = UnwrapBooleanParentheses(operand);
+                var operandIsGroup = operandCore is BooleanBinaryExpression;
+                var childOperatorDepth = operatorDepth;
+                if (operandIsGroup &&
+                    (index > 0 || operand is not BooleanParenthesisExpression))
+                {
+                    childOperatorDepth++;
+                }
+
+                AddStructuredCaseConditionParts(
+                    operand,
+                    index == 0 ? connector : BooleanOperatorText(binary.BinaryExpressionType),
+                    index == 0 ? connectorDepth : operatorDepth,
+                    childOperatorDepth,
+                    isFirstPart && index == 0,
+                    parts);
+            }
+        }
+        else
+        {
+            parts.Add(new CaseConditionPart(
+                connector,
+                connectorDepth,
+                expression,
+                isFirstPart ? 0 : connectorDepth + 1));
+        }
+
+        if (parts.Count <= firstPartIndex || openingParentheses == 0)
+        {
+            return;
+        }
+
+        parts[firstPartIndex] = parts[firstPartIndex] with
+        {
+            OpeningParentheses =
+                parts[firstPartIndex].OpeningParentheses + openingParentheses
+        };
+        var lastPartIndex = parts.Count - 1;
+        parts[lastPartIndex] = parts[lastPartIndex] with
+        {
+            ClosingParentheses =
+                parts[lastPartIndex].ClosingParentheses + openingParentheses
+        };
+    }
+
+    /// <summary>
+    /// 条件式の外側括弧を除いた本体を取得
+    /// </summary>
+    private static BooleanExpression UnwrapBooleanParentheses(BooleanExpression expression)
+    {
+        while (expression is BooleanParenthesisExpression parenthesized)
+        {
+            expression = parenthesized.Expression;
+        }
+
+        return expression;
+    }
+
+    /// <summary>
     /// 条件本体へ元の論理グループを表す括弧を付けて表示
     /// </summary>
     private static string CaseConditionDisplayText(
@@ -2089,6 +2191,264 @@ public static class OutputSheetPlanBuilder
     }
 
     /// <summary>
+    /// 複合条件を持つ直接ネストCASEを、条件・結果・ELSEごとの行へ階層展開
+    /// </summary>
+    private static int WriteStructuredSearchedCase(
+        ICollection<OutputCell> cells,
+        string sql,
+        SearchedCaseExpression expression,
+        int startRow,
+        int column,
+        bool isNestedCase,
+        string firstConditionPrefix = "")
+    {
+        var row = startRow;
+        var prefixPending = firstConditionPrefix.Length > 0;
+        foreach (var clause in expression.WhenClauses)
+        {
+            var conditions = BuildStructuredCaseConditionParts(
+                clause.WhenExpression,
+                isNestedCase);
+            foreach (var part in conditions)
+            {
+                if (part.Connector.Length > 0)
+                {
+                    cells.Add(new OutputCell(
+                        row,
+                        column + part.ConnectorDepth * 2,
+                        part.Connector));
+                }
+
+                var conditionText = CaseConditionDisplayText(sql, part);
+                if (prefixPending)
+                {
+                    conditionText = firstConditionPrefix + conditionText;
+                    prefixPending = false;
+                }
+                cells.Add(new OutputCell(
+                    row,
+                    column + part.ExpressionDepth * 2,
+                    conditionText));
+                row++;
+            }
+
+            row += WriteStructuredCaseResult(
+                cells,
+                sql,
+                clause.ThenExpression,
+                row,
+                column,
+                isNestedCase,
+                hasElseLabel: false);
+        }
+
+        if (expression.ElseExpression is not null)
+        {
+            row += WriteStructuredCaseResult(
+                cells,
+                sql,
+                expression.ElseExpression,
+                row,
+                column,
+                isNestedCase,
+                hasElseLabel: true);
+        }
+
+        return Math.Max(1, row - startRow);
+    }
+
+    /// <summary>
+    /// 階層CASEのTHENまたはELSE結果を、子CASEとスカラ値で共通配置
+    /// </summary>
+    private static int WriteStructuredCaseResult(
+        ICollection<OutputCell> cells,
+        string sql,
+        ScalarExpression result,
+        int row,
+        int column,
+        bool isNestedCase,
+        bool hasElseLabel)
+    {
+        var labelDepth = isNestedCase ? 1 : 0;
+        if (hasElseLabel)
+        {
+            cells.Add(new OutputCell(row, column + labelDepth * 2, "ELSE"));
+        }
+
+        var cases = DirectCaseExpressions(result);
+        var isDirectCase = cases.Count == 1 && ReferenceEquals(result, cases[0]);
+        if (isDirectCase)
+        {
+            return WritePrefixedStructuredCase(
+                cells,
+                sql,
+                cases[0],
+                row,
+                column + 2,
+                "→ ");
+        }
+
+        var resultColumn = column + (labelDepth + 1) * 2;
+        var resultText = cases.Count == 0
+            ? DisplayText(sql, result)
+            : RenderExpressionWithCasePlaceholders(sql, result, cases);
+        cells.Add(new OutputCell(row, resultColumn, $"→ {resultText}"));
+        if (cases.Count == 0)
+        {
+            return 1;
+        }
+
+        var consumedRows = WriteEmbeddedCaseBranches(
+            cells,
+            sql,
+            cases,
+            row + 1,
+            resultColumn + 2);
+        return consumedRows + 1;
+    }
+
+    /// <summary>
+    /// 子CASEの先頭条件に親分岐からの矢印を付与して展開
+    /// </summary>
+    private static int WritePrefixedStructuredCase(
+        ICollection<OutputCell> cells,
+        string sql,
+        ScalarExpression expression,
+        int startRow,
+        int column,
+        string prefix)
+    {
+        if (expression is SearchedCaseExpression searchedCase)
+        {
+            return WriteStructuredSearchedCase(
+                cells,
+                sql,
+                searchedCase,
+                startRow,
+                column,
+                isNestedCase: true,
+                firstConditionPrefix: prefix);
+        }
+
+        var nestedCells = new List<OutputCell>();
+        var consumedRows = WriteCaseBranches(
+            nestedCells,
+            sql,
+            expression,
+            startRow,
+            column);
+        var first = nestedCells
+            .OrderBy(cell => cell.Row)
+            .ThenBy(cell => cell.Column)
+            .FirstOrDefault();
+        foreach (var cell in nestedCells)
+        {
+            cells.Add(ReferenceEquals(cell, first)
+                ? cell with { Value = prefix + cell.Value }
+                : cell);
+        }
+        return consumedRows;
+    }
+
+    /// <summary>
+    /// 複合WHEN条件と直接ネストCASEの両方を持つか判定
+    /// </summary>
+    private static bool RequiresStructuredNestedCaseLayout(ScalarExpression expression)
+    {
+        return ContainsDirectNestedCaseBranch(expression) &&
+            ContainsCompoundCaseCondition(expression);
+    }
+
+    /// <summary>
+    /// CASEツリー内に直接CASEを返す分岐があるか判定
+    /// </summary>
+    private static bool ContainsDirectNestedCaseBranch(ScalarExpression expression)
+    {
+        IEnumerable<ScalarExpression> Results(ScalarExpression caseExpression)
+        {
+            return caseExpression switch
+            {
+                SearchedCaseExpression searched => searched.WhenClauses
+                    .Select(clause => clause.ThenExpression)
+                    .Concat(searched.ElseExpression is null
+                        ? []
+                        : [searched.ElseExpression]),
+                SimpleCaseExpression simple => simple.WhenClauses
+                    .Select(clause => clause.ThenExpression)
+                    .Concat(simple.ElseExpression is null
+                        ? []
+                        : [simple.ElseExpression]),
+                _ => []
+            };
+        }
+
+        foreach (var result in Results(expression))
+        {
+            if (result is SearchedCaseExpression or SimpleCaseExpression)
+            {
+                return true;
+            }
+
+            foreach (var nestedCase in DirectCaseExpressions(result))
+            {
+                if (ContainsDirectNestedCaseBranch(nestedCase))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// CASEツリー内のWHENにANDまたはORの複合条件があるか判定
+    /// </summary>
+    private static bool ContainsCompoundCaseCondition(ScalarExpression expression)
+    {
+        switch (expression)
+        {
+            case SearchedCaseExpression searched:
+                if (searched.WhenClauses.Any(clause =>
+                    ContainsBooleanBinaryExpression(clause.WhenExpression)))
+                {
+                    return true;
+                }
+                return searched.WhenClauses
+                        .SelectMany(clause => DirectCaseExpressions(clause.ThenExpression))
+                        .Any(ContainsCompoundCaseCondition) ||
+                    (searched.ElseExpression is not null &&
+                        DirectCaseExpressions(searched.ElseExpression)
+                            .Any(ContainsCompoundCaseCondition));
+            case SimpleCaseExpression simple:
+                return simple.WhenClauses
+                        .SelectMany(clause => DirectCaseExpressions(clause.ThenExpression))
+                        .Any(ContainsCompoundCaseCondition) ||
+                    (simple.ElseExpression is not null &&
+                        DirectCaseExpressions(simple.ElseExpression)
+                            .Any(ContainsCompoundCaseCondition));
+            default:
+                return false;
+        }
+    }
+
+    /// <summary>
+    /// 括弧を辿った条件式内に論理二項式があるか判定
+    /// </summary>
+    private static bool ContainsBooleanBinaryExpression(BooleanExpression expression)
+    {
+        return expression switch
+        {
+            BooleanBinaryExpression => true,
+            BooleanParenthesisExpression parenthesized =>
+                ContainsBooleanBinaryExpression(parenthesized.Expression),
+            BooleanNotExpression negated =>
+                ContainsBooleanBinaryExpression(negated.Expression),
+            _ => false
+        };
+    }
+
+    /// <summary>
     /// CASE分岐の結果式と、その内側にあるCASEを階層表示
     /// </summary>
     private static int WriteCaseResultLine(
@@ -2169,6 +2529,18 @@ public static class OutputSheetPlanBuilder
         int startRow,
         int column = 32)
     {
+        if (expression is SearchedCaseExpression structuredCase &&
+            RequiresStructuredNestedCaseLayout(structuredCase))
+        {
+            return WriteStructuredSearchedCase(
+                cells,
+                sql,
+                structuredCase,
+                startRow,
+                column,
+                isNestedCase: false);
+        }
+
         return expression switch
         {
             SearchedCaseExpression searchedCase =>

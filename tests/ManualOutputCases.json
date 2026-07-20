@@ -1119,7 +1119,6 @@
     {
       "id": "SEL-082",
       "title": "複合条件を持つTHEN・ELSE両側のネストCASE",
-      "review_status": "暫定期待値（ユーザーレビュー待ち）",
       "sql_lines": [
         "select",
         "    case ",

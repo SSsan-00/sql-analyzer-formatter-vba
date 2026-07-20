@@ -1,7 +1,7 @@
 # 暫定実装ケース
 
 この資料は、ユーザーレビュー前の推測期待値または現行実装出力を管理する。
-2026-07-20時点で、登録済み81ケースはすべて最終レビュー済みであり、SEL-082を追加レビュー中である。
+2026-07-20時点で、登録済み82ケースはすべて最終レビュー済みであり、現在レビュー待ちのケースはない。
 
 ## 共通ルール
 
@@ -10,13 +10,13 @@
 - 無名SELECTには`SQ1`、`SQ2`を付け、派生テーブルやCTEの既存名は維持する。
 - SELECTを含まないINSERT、UPDATE、DELETEは`＜データ移送表＞`だけを出力する。
 
-## レビュー対象
+## 確定済みの最新ケース
 
-| ケース | SQL概要 | 暫定期待値 |
+| ケース | SQL概要 | 確定規則 |
 | --- | --- | --- |
-| SEL-082 | 複合条件を持つTHEN・ELSE両側のネストCASE | ANDとORをそれぞれ独立した行へ分け、対応するネストCASEのELSEを条件ブロックの基準位置へ戻す |
+| SEL-082 | 複合条件を持つTHEN・ELSE両側のネストCASE | ANDとORを独立行に分け、先頭側の括弧グループは外側条件と同じ段落、後続グループは1段深く配置する |
 
-SEL-082は最上位CASEのTHEN側とELSE側に1つずつCASEを置いた合計3CASEの構造である。3つのWHENをAND、OR、括弧が混在する複合条件にしている。`tests/SqlAnalysisFormatter.OutputExpectations.xlsx`のSEL-082シートには、ユーザーレビュー用の暫定期待値を保存している。
+SEL-082は期待値ブックと`OutputReportCases.json`へ正式登録済みである。同じ相対配置をSELECT、INSERT VALUES、INSERT SELECT、UPDATE、DELETEに適用するパーサー単体テストも登録している。
 
 ## 現在の制約
 
@@ -29,7 +29,7 @@ SEL-082は最上位CASEのTHEN側とELSE側に1つずつCASEを置いた合計3C
 新しい暫定ケースを追加した場合は、次のコマンドで元SQLと和名定義を開発用ブックへ投入する。
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File tools/Set-ManualOutputCase.ps1 -CaseId SEL-082
+powershell -ExecutionPolicy Bypass -File tools/Set-ManualOutputCase.ps1 -CaseId <case-id>
 ```
 
 `解析`を実行し、`アウトプット`シートを確認する。暫定期待値と異なる場合は、従来どおりシートへ正しい期待値を記入する。

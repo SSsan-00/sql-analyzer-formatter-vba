@@ -407,6 +407,11 @@
       "id": "SEL-081",
       "sql_lines": ["select", "    case ", "        when tb1.状態 = 'ACTIVE' then", "            case ", "                when tb1.ランクコード = 'VIP' then", "                    case ", "                        when tb1.評価点 >= 90 then 'ACTIVE_VIP_HIGH'", "                        else 'ACTIVE_VIP_STANDARD' ", "                        end ", "                else", "                    case ", "                        when tb1.評価点 >= 70 then 'ACTIVE_GENERAL_HIGH'", "                        else 'ACTIVE_GENERAL_STANDARD' ", "                        end ", "                end ", "        else", "            case ", "                when tb1.削除日時 is null then", "                    case ", "                        when tb1.状態 = 'PENDING' then 'PENDING'", "                        else 'INACTIVE' ", "                        end ", "                else", "                    case ", "                        when tb1.状態 = 'LOCKED' then 'LOCKED_DELETED'", "                        else 'DELETED' ", "                        end ", "                end ", "        end as user_category ", "from", "    users as tb1"],
       "tables": { "tb1": "ユーザー" }
+    },
+    {
+      "id": "SEL-082",
+      "sql_lines": ["select", "    case ", "        when (", "            (tb1.状態 = 'ACTIVE' or tb1.状態 = 'PENDING')", "            and tb1.削除日時 is null", "        ) then", "            case ", "                when (", "                    tb1.ランクコード = 'VIP'", "                    and (tb1.評価点 >= 90 or tb1.優先フラグ = 1)", "                ) then 'ACTIVE_PRIORITY'", "                else 'ACTIVE_STANDARD' ", "                end ", "        else", "            case ", "                when (", "                    (tb1.状態 = 'LOCKED' or tb1.状態 = 'INACTIVE')", "                    and tb1.削除日時 is not null", "                ) then 'INACTIVE_DELETED'", "                else 'OTHER' ", "                end ", "        end as user_category ", "from", "    users as tb1"],
+      "tables": { "tb1": "ユーザー" }
     }
   ]
 }

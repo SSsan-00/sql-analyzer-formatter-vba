@@ -966,6 +966,84 @@ public sealed class OutputSheetPlanBuilderTests
     }
 
     /// <summary>
+    /// 複合条件を持つTHEN・ELSE両側のネストCASEを、論理階層と括弧を保って展開することを確認
+    /// </summary>
+    [TestMethod]
+    public void Build_ExpandsDeepNestedCaseWithCompoundConditions()
+    {
+        const string sql = """
+            select
+                case
+                    when (
+                        (tb1.状態 = 'ACTIVE' or tb1.状態 = 'PENDING')
+                        and tb1.削除日時 is null
+                    ) then
+                        case
+                            when (
+                                tb1.ランクコード = 'VIP'
+                                and (tb1.評価点 >= 90 or tb1.優先フラグ = 1)
+                            ) then 'ACTIVE_PRIORITY'
+                            else 'ACTIVE_STANDARD'
+                        end
+                    else
+                        case
+                            when (
+                                (tb1.状態 = 'LOCKED' or tb1.状態 = 'INACTIVE')
+                                and tb1.削除日時 is not null
+                            ) then 'INACTIVE_DELETED'
+                            else 'OTHER'
+                        end
+                end as user_category
+            from
+                users as tb1
+            """;
+        MappingDefinition[] mappings =
+        [
+            new("tb1", "ユーザー", "status", "状態"),
+            new("tb1", "ユーザー", "deleted_at", "削除日時"),
+            new("tb1", "ユーザー", "rank_code", "ランクコード"),
+            new("tb1", "ユーザー", "score", "評価点"),
+            new("tb1", "ユーザー", "priority_flag", "優先フラグ")
+        ];
+
+        var plan = OutputSheetPlanBuilder.Build(sql, mappings);
+
+        Assert.IsFalse(plan.IsFallback);
+        Assert.AreEqual(15, plan.RowCount);
+        AssertCells(
+            plan,
+            (1, 1, "＜DB入出力項目定義＞"),
+            (2, 1, "参照テーブル: ユーザー[tb1]"),
+            (3, 1, "取得項目"),
+            (3, 7, "取得項目1"),
+            (3, 15, ":"),
+            (3, 17, "user_category"),
+            (3, 31, "※"),
+            (3, 32, "((tb1.状態 = 'ACTIVE'"),
+            (4, 32, "OR"),
+            (4, 34, "tb1.状態 = 'PENDING')"),
+            (5, 32, "AND"),
+            (5, 34, "tb1.削除日時 IS NULL)"),
+            (6, 34, "→ (tb1.ランクコード = 'VIP'"),
+            (7, 36, "AND"),
+            (7, 38, "(tb1.評価点 >= 90"),
+            (8, 38, "OR"),
+            (8, 40, "tb1.優先フラグ = 1))"),
+            (9, 38, "→ 'ACTIVE_PRIORITY'"),
+            (10, 36, "ELSE"),
+            (10, 38, "→ 'ACTIVE_STANDARD'"),
+            (11, 32, "ELSE"),
+            (11, 34, "→ ((tb1.状態 = 'LOCKED'"),
+            (12, 36, "OR"),
+            (12, 38, "tb1.状態 = 'INACTIVE')"),
+            (13, 36, "AND"),
+            (13, 38, "tb1.削除日時 IS NOT NULL)"),
+            (14, 38, "→ 'INACTIVE_DELETED'"),
+            (15, 36, "ELSE"),
+            (15, 38, "→ 'OTHER'"));
+    }
+
+    /// <summary>
     /// 集計関数の引数にあるCASEを外側の式と分岐へ展開することを確認
     /// </summary>
     [TestMethod]
@@ -2260,6 +2338,100 @@ public sealed class OutputSheetPlanBuilderTests
     }
 
     /// <summary>
+    /// INSERT VALUES内の深いネストCASEにも共通の論理階層配置を適用することを確認
+    /// </summary>
+    [TestMethod]
+    public void Build_ExpandsDeepNestedCaseInsideInsertValues()
+    {
+        const string sql = """
+            insert into user_archive(状態)
+            values (
+                case
+                    when (
+                        (@status = 'ACTIVE' or @status = 'PENDING')
+                        and @deleted_at is null
+                    ) then
+                        case
+                            when (
+                                @rank_code = 'VIP'
+                                and (@score >= 90 or @priority_flag = 1)
+                            ) then 'ACTIVE_PRIORITY'
+                            else 'ACTIVE_STANDARD'
+                        end
+                    else
+                        case
+                            when (
+                                (@status = 'LOCKED' or @status = 'INACTIVE')
+                                and @deleted_at is not null
+                            ) then 'INACTIVE_DELETED'
+                            else 'OTHER'
+                        end
+                end
+            )
+            """;
+
+        var plan = OutputSheetPlanBuilder.Build(sql, DeepNestedCaseMappings());
+
+        Assert.IsFalse(plan.IsFallback);
+        Assert.AreEqual(16, plan.RowCount);
+        Assert.AreEqual("状態", CellValue(plan, 4, 1));
+        Assert.AreEqual("CASE結果", CellValue(plan, 4, 37));
+        Assert.AreEqual("※", CellValue(plan, 4, 51));
+        AssertDeepNestedCaseLayout(
+            plan,
+            startRow: 4,
+            startColumn: 52,
+            status: "@status",
+            deletedAt: "@deleted_at",
+            rankCode: "@rank_code",
+            score: "@score",
+            priorityFlag: "@priority_flag");
+    }
+
+    /// <summary>
+    /// INSERT SELECTの取得項目とデータ移送表の両方に共通の深いCASE配置を適用することを確認
+    /// </summary>
+    [TestMethod]
+    public void Build_ExpandsDeepNestedCaseInsideInsertSelect()
+    {
+        const string sql = """
+            insert into user_archive(状態)
+            select
+                case
+                    when (
+                        (tb1.状態 = 'ACTIVE' or tb1.状態 = 'PENDING')
+                        and tb1.削除日時 is null
+                    ) then
+                        case
+                            when (
+                                tb1.ランクコード = 'VIP'
+                                and (tb1.評価点 >= 90 or tb1.優先フラグ = 1)
+                            ) then 'ACTIVE_PRIORITY'
+                            else 'ACTIVE_STANDARD'
+                        end
+                    else
+                        case
+                            when (
+                                (tb1.状態 = 'LOCKED' or tb1.状態 = 'INACTIVE')
+                                and tb1.削除日時 is not null
+                            ) then 'INACTIVE_DELETED'
+                            else 'OTHER'
+                        end
+                end
+            from
+                users as tb1
+            """;
+
+        var plan = OutputSheetPlanBuilder.Build(sql, DeepNestedCaseMappings());
+
+        Assert.IsFalse(plan.IsFallback);
+        AssertDeepNestedCaseLayout(plan, startRow: 3, startColumn: 32);
+        var transferTitleRow = plan.Cells.Single(cell =>
+            cell.Column == 1 && cell.Value == "＜データ移送表＞").Row;
+        AssertDeepNestedCaseLayout(plan, transferTitleRow + 3, 52);
+    }
+
+    /// <summary>
     /// SELECT INTOの列値を返さないCASEを移送方法へ置くことを確認
     /// </summary>
     [TestMethod]
@@ -2590,6 +2762,48 @@ public sealed class OutputSheetPlanBuilderTests
     }
 
     /// <summary>
+    /// DELETEの検索条件に含まれる深いネストCASEにも共通の論理階層配置を適用することを確認
+    /// </summary>
+    [TestMethod]
+    public void Build_ExpandsDeepNestedCaseInsideDeleteCondition()
+    {
+        const string sql = """
+            delete tb1
+            from
+                users as tb1
+            where
+                case
+                    when (
+                        (tb1.状態 = 'ACTIVE' or tb1.状態 = 'PENDING')
+                        and tb1.削除日時 is null
+                    ) then
+                        case
+                            when (
+                                tb1.ランクコード = 'VIP'
+                                and (tb1.評価点 >= 90 or tb1.優先フラグ = 1)
+                            ) then 'ACTIVE_PRIORITY'
+                            else 'ACTIVE_STANDARD'
+                        end
+                    else
+                        case
+                            when (
+                                (tb1.状態 = 'LOCKED' or tb1.状態 = 'INACTIVE')
+                                and tb1.削除日時 is not null
+                            ) then 'INACTIVE_DELETED'
+                            else 'OTHER'
+                        end
+                end = 'ACTIVE_PRIORITY'
+            """;
+
+        var plan = OutputSheetPlanBuilder.Build(sql, DeepNestedCaseMappings());
+
+        Assert.IsFalse(plan.IsFallback);
+        Assert.AreEqual("CASE結果 = 'ACTIVE_PRIORITY'", CellValue(plan, 3, 17));
+        Assert.AreEqual("※", CellValue(plan, 3, 31));
+        AssertDeepNestedCaseLayout(plan, startRow: 3, startColumn: 32);
+    }
+
+    /// <summary>
     /// EXISTSを含むDELETEをサブクエリ表とデータ移送表へ分離することを確認
     /// </summary>
     [TestMethod]
@@ -2740,6 +2954,83 @@ public sealed class OutputSheetPlanBuilderTests
         Assert.AreEqual("TransferGroup", plan.Sections[2].Kind.ToString());
         Assert.AreEqual(4, plan.Sections[2].StartRow);
         Assert.AreEqual(6, plan.Sections[2].EndRow);
+    }
+
+    /// <summary>
+    /// UPDATE SET内の深いネストCASEにもSELECTと同じ論理階層の配置規則を適用することを確認
+    /// </summary>
+    [TestMethod]
+    public void Build_ExpandsDeepNestedCaseInsideUpdateSet()
+    {
+        const string sql = """
+            update tb1
+            set
+                状態 = case
+                    when (
+                        (tb1.状態 = 'ACTIVE' or tb1.状態 = 'PENDING')
+                        and tb1.削除日時 is null
+                    ) then
+                        case
+                            when (
+                                tb1.ランクコード = 'VIP'
+                                and (tb1.評価点 >= 90 or tb1.優先フラグ = 1)
+                            ) then 'ACTIVE_PRIORITY'
+                            else 'ACTIVE_STANDARD'
+                        end
+                    else
+                        case
+                            when (
+                                (tb1.状態 = 'LOCKED' or tb1.状態 = 'INACTIVE')
+                                and tb1.削除日時 is not null
+                            ) then 'INACTIVE_DELETED'
+                            else 'OTHER'
+                        end
+                end
+            from
+                users as tb1
+            """;
+        MappingDefinition[] mappings =
+        [
+            new("tb1", "ユーザー", "status", "状態"),
+            new("tb1", "ユーザー", "deleted_at", "削除日時"),
+            new("tb1", "ユーザー", "rank_code", "ランクコード"),
+            new("tb1", "ユーザー", "score", "評価点"),
+            new("tb1", "ユーザー", "priority_flag", "優先フラグ")
+        ];
+
+        var plan = OutputSheetPlanBuilder.Build(sql, mappings);
+
+        Assert.IsFalse(plan.IsFallback);
+        Assert.AreEqual(16, plan.RowCount);
+        Assert.AreEqual("状態", CellValue(plan, 4, 1));
+        Assert.IsNull(CellValue(plan, 4, 19));
+        Assert.AreEqual("CASE結果", CellValue(plan, 4, 37));
+        Assert.AreEqual("※", CellValue(plan, 4, 51));
+        Assert.AreEqual("((tb1.状態 = 'ACTIVE'", CellValue(plan, 4, 52));
+        Assert.AreEqual("OR", CellValue(plan, 5, 52));
+        Assert.AreEqual("tb1.状態 = 'PENDING')", CellValue(plan, 5, 54));
+        Assert.AreEqual("AND", CellValue(plan, 6, 52));
+        Assert.AreEqual("tb1.削除日時 IS NULL)", CellValue(plan, 6, 54));
+        Assert.AreEqual("→ (tb1.ランクコード = 'VIP'", CellValue(plan, 7, 54));
+        Assert.AreEqual("AND", CellValue(plan, 8, 56));
+        Assert.AreEqual("(tb1.評価点 >= 90", CellValue(plan, 8, 58));
+        Assert.AreEqual("OR", CellValue(plan, 9, 58));
+        Assert.AreEqual("tb1.優先フラグ = 1))", CellValue(plan, 9, 60));
+        Assert.AreEqual("→ 'ACTIVE_PRIORITY'", CellValue(plan, 10, 58));
+        Assert.AreEqual("ELSE", CellValue(plan, 11, 56));
+        Assert.AreEqual("→ 'ACTIVE_STANDARD'", CellValue(plan, 11, 58));
+        Assert.AreEqual("ELSE", CellValue(plan, 12, 52));
+        Assert.AreEqual("→ ((tb1.状態 = 'LOCKED'", CellValue(plan, 12, 54));
+        Assert.AreEqual("OR", CellValue(plan, 13, 56));
+        Assert.AreEqual("tb1.状態 = 'INACTIVE')", CellValue(plan, 13, 58));
+        Assert.AreEqual("AND", CellValue(plan, 14, 56));
+        Assert.AreEqual("tb1.削除日時 IS NOT NULL)", CellValue(plan, 14, 58));
+        Assert.AreEqual("→ 'INACTIVE_DELETED'", CellValue(plan, 15, 58));
+        Assert.AreEqual("ELSE", CellValue(plan, 16, 56));
+        Assert.AreEqual("→ 'OTHER'", CellValue(plan, 16, 58));
+        Assert.HasCount(3, plan.Sections);
+        Assert.AreEqual(4, plan.Sections[2].StartRow);
+        Assert.AreEqual(16, plan.Sections[2].EndRow);
     }
 
     /// <summary>
@@ -3296,6 +3587,59 @@ public sealed class OutputSheetPlanBuilderTests
         return plan.Cells
             .SingleOrDefault(cell => cell.Row == row && cell.Column == column)
             ?.Value;
+    }
+
+    /// <summary>
+    /// 深いネストCASE用の共通変換定義
+    /// </summary>
+    private static MappingDefinition[] DeepNestedCaseMappings()
+    {
+        return
+        [
+            new("user_archive", "ユーザー履歴", "status", "状態"),
+            new("tb1", "ユーザー", "status", "状態"),
+            new("tb1", "ユーザー", "deleted_at", "削除日時"),
+            new("tb1", "ユーザー", "rank_code", "ランクコード"),
+            new("tb1", "ユーザー", "score", "評価点"),
+            new("tb1", "ユーザー", "priority_flag", "優先フラグ")
+        ];
+    }
+
+    /// <summary>
+    /// レビュー済みのSEL-082配置を開始位置に相対して比較
+    /// </summary>
+    private static void AssertDeepNestedCaseLayout(
+        OutputSheetPlan plan,
+        int startRow,
+        int startColumn,
+        string status = "tb1.状態",
+        string deletedAt = "tb1.削除日時",
+        string rankCode = "tb1.ランクコード",
+        string score = "tb1.評価点",
+        string priorityFlag = "tb1.優先フラグ")
+    {
+        Assert.AreEqual($"(({status} = 'ACTIVE'", CellValue(plan, startRow, startColumn));
+        Assert.AreEqual("OR", CellValue(plan, startRow + 1, startColumn));
+        Assert.AreEqual($"{status} = 'PENDING')", CellValue(plan, startRow + 1, startColumn + 2));
+        Assert.AreEqual("AND", CellValue(plan, startRow + 2, startColumn));
+        Assert.AreEqual($"{deletedAt} IS NULL)", CellValue(plan, startRow + 2, startColumn + 2));
+        Assert.AreEqual($"→ ({rankCode} = 'VIP'", CellValue(plan, startRow + 3, startColumn + 2));
+        Assert.AreEqual("AND", CellValue(plan, startRow + 4, startColumn + 4));
+        Assert.AreEqual($"({score} >= 90", CellValue(plan, startRow + 4, startColumn + 6));
+        Assert.AreEqual("OR", CellValue(plan, startRow + 5, startColumn + 6));
+        Assert.AreEqual($"{priorityFlag} = 1))", CellValue(plan, startRow + 5, startColumn + 8));
+        Assert.AreEqual("→ 'ACTIVE_PRIORITY'", CellValue(plan, startRow + 6, startColumn + 6));
+        Assert.AreEqual("ELSE", CellValue(plan, startRow + 7, startColumn + 4));
+        Assert.AreEqual("→ 'ACTIVE_STANDARD'", CellValue(plan, startRow + 7, startColumn + 6));
+        Assert.AreEqual("ELSE", CellValue(plan, startRow + 8, startColumn));
+        Assert.AreEqual($"→ (({status} = 'LOCKED'", CellValue(plan, startRow + 8, startColumn + 2));
+        Assert.AreEqual("OR", CellValue(plan, startRow + 9, startColumn + 4));
+        Assert.AreEqual($"{status} = 'INACTIVE')", CellValue(plan, startRow + 9, startColumn + 6));
+        Assert.AreEqual("AND", CellValue(plan, startRow + 10, startColumn + 4));
+        Assert.AreEqual($"{deletedAt} IS NOT NULL)", CellValue(plan, startRow + 10, startColumn + 6));
+        Assert.AreEqual("→ 'INACTIVE_DELETED'", CellValue(plan, startRow + 11, startColumn + 6));
+        Assert.AreEqual("ELSE", CellValue(plan, startRow + 12, startColumn + 4));
+        Assert.AreEqual("→ 'OTHER'", CellValue(plan, startRow + 12, startColumn + 6));
     }
 
     /// <summary>
