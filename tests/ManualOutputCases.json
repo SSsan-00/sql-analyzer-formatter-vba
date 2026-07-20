@@ -1072,6 +1072,50 @@
         { "table_id": "tb1", "table_name_ja": "注文", "field_id": "status", "field_name_ja": "状態" },
         { "table_id": "tb1", "table_name_ja": "注文", "field_id": "amount", "field_name_ja": "金額" }
       ]
+    },
+    {
+      "id": "SEL-081",
+      "title": "THEN・ELSE両側の深いネストCASE",
+      "review_status": "現行実装出力（ユーザーレビュー待ち）",
+      "sql_lines": [
+        "select",
+        "    case ",
+        "        when tb1.status = 'ACTIVE' then",
+        "            case ",
+        "                when tb1.rank_code = 'VIP' then",
+        "                    case ",
+        "                        when tb1.score >= 90 then 'ACTIVE_VIP_HIGH'",
+        "                        else 'ACTIVE_VIP_STANDARD' ",
+        "                        end ",
+        "                else",
+        "                    case ",
+        "                        when tb1.score >= 70 then 'ACTIVE_GENERAL_HIGH'",
+        "                        else 'ACTIVE_GENERAL_STANDARD' ",
+        "                        end ",
+        "                end ",
+        "        else",
+        "            case ",
+        "                when tb1.deleted_at is null then",
+        "                    case ",
+        "                        when tb1.status = 'PENDING' then 'PENDING'",
+        "                        else 'INACTIVE' ",
+        "                        end ",
+        "                else",
+        "                    case ",
+        "                        when tb1.status = 'LOCKED' then 'LOCKED_DELETED'",
+        "                        else 'DELETED' ",
+        "                        end ",
+        "                end ",
+        "        end as user_category ",
+        "from",
+        "    users as tb1"
+      ],
+      "definitions": [
+        { "table_id": "tb1", "table_name_ja": "ユーザー", "field_id": "status", "field_name_ja": "状態" },
+        { "table_id": "tb1", "table_name_ja": "ユーザー", "field_id": "rank_code", "field_name_ja": "ランクコード" },
+        { "table_id": "tb1", "table_name_ja": "ユーザー", "field_id": "score", "field_name_ja": "評価点" },
+        { "table_id": "tb1", "table_name_ja": "ユーザー", "field_id": "deleted_at", "field_name_ja": "削除日時" }
+      ]
     }
   ]
 }

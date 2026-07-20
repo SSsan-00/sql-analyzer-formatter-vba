@@ -10,7 +10,7 @@
 - `tests/SqlAnalysisFormatter.Parser.Tests`: MSTest による C# テスト
 - `tests/CRUD_TEST_CASES.md`: SQL 変換ケース資料
 - `tests/OutputReportCases.json`: 登録済み80ケースの入力 SQL と和名定義
-- `tests/SqlAnalysisFormatter.OutputExpectations.xlsx`: 登録済み80ケースの期待値ブック
+- `tests/SqlAnalysisFormatter.OutputExpectations.xlsx`: 登録済み80ケースとレビュー待ちケースの期待値ブック
 - `tests/ManualOutputCases.json`: 確定済みケースとユーザーレビュー待ちケースの入力 SQL・和名定義
 - `docs/PROVISIONAL_OUTPUT_CASES.md`: 実装前・実装後の推測期待値を管理するユーザーレビュー待ちケース
 - `tools/Set-ManualOutputCase.ps1`: 指定ケースをマクロブックへ投入して期待値作成を開始するスクリプト

@@ -1734,6 +1734,14 @@ INSERT SELECTのトップレベルにUNIONまたはUNION ALLがある場合、SE
 
 各SQLはScriptDomで構文エラーがないことと、A5M2 `Ctrl+Q`の実整形結果を確認済みです。
 
+## 期待値レビュー待ち
+
+| ケース | 内容 |
+| --- | --- |
+| SEL-081 | THEN・ELSE両側を3段までネストしたCASEの現行実装出力をレビューする |
+
+SEL-081は`tests/ManualOutputCases.json`と期待値ブックのレビュー専用シートへ登録し、`OutputReportCases.json`には未登録です。期待値レビュー後に失敗テストへ追加してTDDを開始します。
+
 ## 暫定実装済み・ユーザーレビュー待ち
 
 現在、ユーザーレビュー待ちの暫定実装ケースはありません。
