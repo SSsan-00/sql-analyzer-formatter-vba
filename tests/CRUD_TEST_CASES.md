@@ -1739,7 +1739,7 @@ SEL-080までの各SQLはScriptDomで構文エラーがないことと、A5M2 `C
 
 | ケース | 内容 |
 | --- | --- |
-| SEL-082 | 最上位・THEN側・ELSE側の3CASEをAND・OR・括弧の複合条件にした現行実装出力をレビューする |
+| SEL-082 | 最上位・THEN側・ELSE側の3CASEについて、ANDとORの改行およびネストELSEの配置を反映した暫定期待値をレビューする |
 
 SEL-082は`tests/ManualOutputCases.json`と期待値ブックのレビュー専用シートへ登録し、`OutputReportCases.json`には未登録です。期待値レビュー後に失敗テストへ追加してTDDを開始します。
 
