@@ -14,9 +14,9 @@
 
 | ケース | SQL概要 | 現行実装の出力 |
 | --- | --- | --- |
-| SEL-082 | 複合条件を持つTHEN・ELSE両側の深いネストCASE | 各WHENの括弧を保持し、`((a OR b) AND (c OR d))`をAND、OR、末端条件の階層へ2列ずつ分けながら、3段のCASEネストも同時に展開する |
+| SEL-082 | 複合条件を持つTHEN・ELSE両側のネストCASE | 最上位、THEN側、ELSE側の3つのCASEについて、括弧を保持しながらAND、OR、末端条件を2列ずつ階層表示する |
 
-SEL-082はSEL-081と同じ3段構造を使い、7つあるすべてのWHENをAND、OR、括弧が混在する複合条件に置き換えている。`tests/SqlAnalysisFormatter.OutputExpectations.xlsx`のSEL-082シートには、仕様確定前の基準として現行実装の解析結果を保存している。
+SEL-082は最上位CASEのTHEN側とELSE側に1つずつCASEを置いた合計3CASEの構造である。3つのWHENをAND、OR、括弧が混在する複合条件にしている。`tests/SqlAnalysisFormatter.OutputExpectations.xlsx`のSEL-082シートには、仕様確定前の基準として現行実装の解析結果を保存している。
 
 ## 現在の制約
 
