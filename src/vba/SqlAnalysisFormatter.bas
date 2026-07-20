@@ -101,7 +101,7 @@ Public Sub AnalyzeQueries(Optional ByVal showMessage As Boolean = True)
     Next rowNumber
 
     If Len(convertedQueryText) > 0 Then
-        If Not TryWriteExternalOutputPlan(wsOutput, wsRef, parserQueryText, fallbackReason) Then
+        If Not TryWriteExternalOutputPlan(wsOutput, wsSql, wsRef, parserQueryText, fallbackReason) Then
             WriteFallbackOutput wsOutput, convertedQueryText, fallbackReason
         End If
     Else
@@ -753,6 +753,7 @@ End Sub
 ' 外部parserの描画計画をアウトプットシートへ反映
 Private Function TryWriteExternalOutputPlan( _
     ByVal wsOutput As Worksheet, _
+    ByVal wsSql As Worksheet, _
     ByVal wsRef As Worksheet, _
     ByVal queryText As String, _
     ByRef fallbackReason As String) As Boolean
@@ -791,7 +792,7 @@ Private Function TryWriteExternalOutputPlan( _
     End If
 
     outputText = ReadUnicodeTextFile(outputPath)
-    succeeded = ApplyOutputPlan(wsOutput, outputText)
+    succeeded = ApplyOutputPlan(wsOutput, wsSql, outputText)
     If Not succeeded Then
         fallbackReason = ParserOutputInvalidReason()
     End If
@@ -858,19 +859,29 @@ Private Function RunParserPlanProcess( _
 End Function
 
 ' parserの描画計画を検証してセルと書式へ反映
-Private Function ApplyOutputPlan(ByVal ws As Worksheet, ByVal planText As String) As Boolean
+Private Function ApplyOutputPlan( _
+    ByVal ws As Worksheet, _
+    ByVal wsSql As Worksheet, _
+    ByVal planText As String) As Boolean
     Dim lines As Variant
     Dim fields As Variant
     Dim cellValues As Variant
     Dim section As Variant
     Dim sections As Collection
+    Dim qualification As Variant
+    Dim qualifications As Collection
     Dim lineText As String
     Dim normalizedText As String
     Dim cellValue As String
+    Dim originalValue As String
+    Dim qualifiedValue As String
     Dim lineIndex As Long
+    Dim planVersion As Long
     Dim rowCount As Long
     Dim rowNumber As Long
     Dim columnNumber As Long
+    Dim queryLine As Long
+    Dim qualificationOrder As Long
     Dim startRow As Long
     Dim endRow As Long
     Dim outputRange As Range
@@ -882,12 +893,16 @@ Private Function ApplyOutputPlan(ByVal ws As Worksheet, ByVal planText As String
     lines = Split(normalizedText, vbLf)
     fields = Split(CStr(lines(0)), vbTab)
     If UBound(fields) <> 3 Then Exit Function
-    If CStr(fields(0)) <> "SAF_OUTPUT_PLAN" Or CStr(fields(1)) <> "1" Then Exit Function
+    If CStr(fields(0)) <> "SAF_OUTPUT_PLAN" Then Exit Function
+    If Not IsNumeric(fields(1)) Then Exit Function
+    planVersion = CLng(fields(1))
+    If planVersion < 1 Or planVersion > 2 Then Exit Function
     If Not IsNumeric(fields(2)) Then Exit Function
     rowCount = CLng(fields(2))
     If rowCount < 0 Then Exit Function
 
     Set sections = New Collection
+    Set qualifications = New Collection
     If rowCount > 0 Then
         ReDim cellValues(1 To rowCount, 1 To OUTPUT_LAST_COLUMN)
     End If
@@ -897,10 +912,10 @@ Private Function ApplyOutputPlan(ByVal ws As Worksheet, ByVal planText As String
         lineText = CStr(lines(lineIndex))
         If Len(lineText) > 0 Then
             fields = Split(lineText, vbTab)
-            If UBound(fields) <> 3 Then GoTo InvalidPlan
 
             Select Case CStr(fields(0))
                 Case "C"
+                    If UBound(fields) <> 3 Then GoTo InvalidPlan
                     If Not IsNumeric(fields(1)) Or Not IsNumeric(fields(2)) Then GoTo InvalidPlan
                     rowNumber = CLng(fields(1))
                     columnNumber = CLng(fields(2))
@@ -912,11 +927,23 @@ Private Function ApplyOutputPlan(ByVal ws As Worksheet, ByVal planText As String
                     End If
                     cellValues(rowNumber, columnNumber) = cellValue
                 Case "S"
+                    If UBound(fields) <> 3 Then GoTo InvalidPlan
                     If Not IsNumeric(fields(2)) Or Not IsNumeric(fields(3)) Then GoTo InvalidPlan
                     startRow = CLng(fields(2))
                     endRow = CLng(fields(3))
                     If startRow < 1 Or endRow < startRow Or endRow > rowCount Then GoTo InvalidPlan
                     sections.Add Array(CStr(fields(1)), startRow, endRow)
+                Case "Q"
+                    If planVersion < 2 Or UBound(fields) <> 4 Then GoTo InvalidPlan
+                    If Not IsNumeric(fields(1)) Or Not IsNumeric(fields(2)) Then GoTo InvalidPlan
+                    queryLine = CLng(fields(1))
+                    qualificationOrder = CLng(fields(2))
+                    If queryLine < 1 Or qualificationOrder < 1 Then GoTo InvalidPlan
+                    originalValue = UnescapeProtocolField(CStr(fields(3)))
+                    qualifiedValue = UnescapeProtocolField(CStr(fields(4)))
+                    If Len(originalValue) = 0 Or Len(qualifiedValue) = 0 Then GoTo InvalidPlan
+                    qualifications.Add Array( _
+                        queryLine, qualificationOrder, originalValue, qualifiedValue)
                 Case Else
                     GoTo InvalidPlan
             End Select
@@ -934,6 +961,10 @@ Private Function ApplyOutputPlan(ByVal ws As Worksheet, ByVal planText As String
     For Each section In sections
         ApplyOutputSectionStyle ws, CStr(section(0)), CLng(section(1)), CLng(section(2))
     Next section
+    For Each qualification In qualifications
+        ApplyReplacementQualification _
+            wsSql, CLng(qualification(0)), CStr(qualification(2)), CStr(qualification(3))
+    Next qualification
 
     ApplyOutputSheetFont ws, rowCount
     ApplyOutputSheetView ws
@@ -942,6 +973,67 @@ Private Function ApplyOutputPlan(ByVal ws As Worksheet, ByVal planText As String
 
 InvalidPlan:
     ApplyOutputPlan = False
+End Function
+
+' parserが補完したプレフィックスを既存の変換内容へ反映
+Private Sub ApplyReplacementQualification( _
+    ByVal wsSql As Worksheet, _
+    ByVal queryLine As Long, _
+    ByVal originalValue As String, _
+    ByVal qualifiedValue As String)
+
+    Dim rowNumber As Long
+    Dim columnNumber As Long
+    Dim lastColumn As Long
+
+    rowNumber = WorksheetRowForQueryLine(wsSql, queryLine)
+    If rowNumber = 0 Then Exit Sub
+
+    lastColumn = LastUsedColumn(wsSql)
+    If lastColumn < COL_REPLACEMENT Then Exit Sub
+    For columnNumber = COL_REPLACEMENT To lastColumn
+        If StrComp( _
+            CStr(wsSql.Cells(rowNumber, columnNumber).Value), _
+            originalValue, _
+            vbBinaryCompare) = 0 Then
+            SetOutputCellText wsSql.Cells(rowNumber, columnNumber), qualifiedValue
+            Exit Sub
+        End If
+    Next columnNumber
+End Sub
+
+' parserへ連結した非空SQL行番号をSQL解析シートの行番号へ戻す
+Private Function WorksheetRowForQueryLine( _
+    ByVal wsSql As Worksheet, _
+    ByVal queryLine As Long) As Long
+
+    Dim rowNumber As Long
+    Dim currentQueryLine As Long
+    Dim rowLineCount As Long
+    Dim lastRow As Long
+    Dim sqlText As String
+
+    lastRow = LastUsedRowInColumn(wsSql, COL_SQL)
+    For rowNumber = 2 To lastRow
+        sqlText = CStr(wsSql.Cells(rowNumber, COL_SQL).Value)
+        If Len(sqlText) > 0 Then
+            rowLineCount = TextLineCount(sqlText)
+            If queryLine <= currentQueryLine + rowLineCount Then
+                WorksheetRowForQueryLine = rowNumber
+                Exit Function
+            End If
+            currentQueryLine = currentQueryLine + rowLineCount
+        End If
+    Next rowNumber
+End Function
+
+' CRLF、CR、LFのいずれでも文字列内の行数を数える
+Private Function TextLineCount(ByVal value As String) As Long
+    Dim normalizedText As String
+
+    normalizedText = Replace(value, vbCrLf, vbLf)
+    normalizedText = Replace(normalizedText, vbCr, vbLf)
+    TextLineCount = UBound(Split(normalizedText, vbLf)) + 1
 End Function
 
 ' 数式判定と先頭アポストロフィの消費を避けて文字列を書き込む

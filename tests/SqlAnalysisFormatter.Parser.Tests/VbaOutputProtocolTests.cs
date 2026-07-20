@@ -25,15 +25,20 @@ public sealed class VbaOutputProtocolTests
                 new OutputSection(OutputSectionKind.TransferGroup, 5, 7)
             ],
             4,
-            false);
+            false,
+            ReplacementQualifications:
+            [
+                new OutputReplacementQualification(2, 8, "名前", "tb1.名前")
+            ]);
 
         var text = VbaOutputProtocol.SerializePlan(plan);
 
         var expected = string.Join(
             "\r\n",
-            "SAF_OUTPUT_PLAN\t1\t4\t0",
+            "SAF_OUTPUT_PLAN\t2\t4\t0",
             "C\t1\t1\t見出し",
             "C\t3\t17\tline1\\r\\nline2\\\\value\\tend",
+            "Q\t2\t8\t名前\ttb1.名前",
             "S\tREFERENCE\t2\t2",
             "S\tSTANDARD\t3\t4",
             "S\tTRANSFER_GROUP\t5\t7");

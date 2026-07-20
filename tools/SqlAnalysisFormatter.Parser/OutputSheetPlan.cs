@@ -23,6 +23,15 @@ public enum OutputSectionKind
 public sealed record OutputSection(OutputSectionKind Kind, int StartRow, int EndRow);
 
 /// <summary>
+/// SQL解析シートの変換内容へ反映するプレフィックス補完
+/// </summary>
+public sealed record OutputReplacementQualification(
+    int QueryLine,
+    int Order,
+    string OriginalValue,
+    string QualifiedValue);
+
+/// <summary>
 /// アウトプットシート全体の描画計画
 /// </summary>
 public sealed record OutputSheetPlan(
@@ -32,4 +41,5 @@ public sealed record OutputSheetPlan(
     bool IsFallback,
     string? FallbackReason = null,
     int? FallbackQueryStartRow = null,
-    int? FallbackQueryEndRow = null);
+    int? FallbackQueryEndRow = null,
+    IReadOnlyList<OutputReplacementQualification>? ReplacementQualifications = null);

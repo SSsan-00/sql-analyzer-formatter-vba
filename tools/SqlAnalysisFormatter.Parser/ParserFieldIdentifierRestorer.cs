@@ -37,10 +37,18 @@ internal static class ParserFieldIdentifierRestorer
         var fallbackReason = plan.FallbackReason is null
             ? null
             : RestoreText(plan.FallbackReason, replacements);
+        var replacementQualifications = plan.ReplacementQualifications?
+            .Select(qualification => qualification with
+            {
+                OriginalValue = RestoreText(qualification.OriginalValue, replacements),
+                QualifiedValue = RestoreText(qualification.QualifiedValue, replacements)
+            })
+            .ToArray();
         return plan with
         {
             Cells = cells,
-            FallbackReason = fallbackReason
+            FallbackReason = fallbackReason,
+            ReplacementQualifications = replacementQualifications
         };
     }
 

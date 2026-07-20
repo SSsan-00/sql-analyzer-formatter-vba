@@ -675,6 +675,7 @@ Public Sub AnalyzeQueries_QualifiesStandaloneColumnThroughTableName()
 
     AnalyzeQueries False
 
+    AssertCellValue wsSql.Cells(2, COL_REPLACEMENT), "tb1." & nameText
     AssertCellValue wsOutput.Cells(3, 17), "tb1." & nameText
     AssertCellValue wsOutput.Cells(4, 17), "tb1.age"
 End Sub

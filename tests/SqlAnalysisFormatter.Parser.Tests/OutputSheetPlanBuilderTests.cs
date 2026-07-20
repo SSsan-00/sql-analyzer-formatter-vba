@@ -162,6 +162,10 @@ public sealed class OutputSheetPlanBuilderTests
         Assert.IsFalse(plan.IsFallback);
         Assert.AreEqual("tb1.名前", CellValue(plan, 3, 17));
         Assert.AreEqual("tb1.age", CellValue(plan, 4, 17));
+        var qualification = plan.ReplacementQualifications!
+            .Single(item => item.OriginalValue == "名前");
+        Assert.AreEqual(1, qualification.QueryLine);
+        Assert.AreEqual("tb1.名前", qualification.QualifiedValue);
     }
 
     /// <summary>
@@ -181,6 +185,9 @@ public sealed class OutputSheetPlanBuilderTests
 
         Assert.IsFalse(plan.IsFallback);
         Assert.AreEqual("tb1.name", CellValue(plan, 3, 17));
+        var qualification = plan.ReplacementQualifications!
+            .Single(item => item.OriginalValue == "name");
+        Assert.AreEqual("tb1.name", qualification.QualifiedValue);
     }
 
     /// <summary>
@@ -205,6 +212,7 @@ public sealed class OutputSheetPlanBuilderTests
 
         Assert.IsFalse(plan.IsFallback);
         Assert.AreEqual("名前", CellValue(plan, 3, 17));
+        Assert.IsTrue(plan.ReplacementQualifications is null or { Count: 0 });
     }
 
     /// <summary>

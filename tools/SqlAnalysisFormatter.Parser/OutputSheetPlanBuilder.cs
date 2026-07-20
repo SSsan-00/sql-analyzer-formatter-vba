@@ -31,7 +31,8 @@ public static class OutputSheetPlanBuilder
             return ParserFieldIdentifierRestorer.Restore(fallback, mappings);
         }
 
-        var qualifiedSql = QualifyUnqualifiedSelectColumns(sql, script, mappings);
+        var qualificationResult = QualifyUnqualifiedSelectColumns(sql, script, mappings);
+        var qualifiedSql = qualificationResult.Sql;
         if (!string.Equals(qualifiedSql, sql, StringComparison.Ordinal))
         {
             script = ParseScript(qualifiedSql, out errors);
@@ -42,7 +43,10 @@ public static class OutputSheetPlanBuilder
             }
         }
 
-        var plan = BuildCore(qualifiedSql, script, mappings);
+        var plan = BuildCore(qualifiedSql, script, mappings) with
+        {
+            ReplacementQualifications = qualificationResult.Replacements
+        };
         return ParserFieldIdentifierRestorer.Restore(plan, mappings);
     }
 
@@ -59,17 +63,17 @@ public static class OutputSheetPlanBuilder
     /// <summary>
     /// SELECT式内の未修飾列を、変換定義から所属先が一意な場合だけSQL上のテーブル別名で修飾
     /// </summary>
-    private static string QualifyUnqualifiedSelectColumns(
+    private static QualificationResult QualifyUnqualifiedSelectColumns(
         string sql,
         TSqlScript script,
         IReadOnlyList<MappingDefinition> mappings)
     {
         if (mappings.Count == 0)
         {
-            return sql;
+            return new QualificationResult(sql, []);
         }
 
-        var insertions = new Dictionary<int, string>();
+        var insertions = new Dictionary<int, QualificationInsertion>();
         foreach (var query in QuerySpecificationCollector.Collect(script))
         {
             var namedTables = query.FromClause?.TableReferences
@@ -91,7 +95,16 @@ public static class OutputSheetPlanBuilder
                         mappings);
                     if (qualifier is not null)
                     {
-                        insertions.TryAdd(column.StartOffset, qualifier + ".");
+                        var originalValue = FragmentText(sql, column);
+                        insertions.TryAdd(
+                            column.StartOffset,
+                            new QualificationInsertion(
+                                qualifier + ".",
+                                new OutputReplacementQualification(
+                                    column.StartLine,
+                                    column.StartColumn,
+                                    originalValue,
+                                    qualifier + "." + originalValue)));
                     }
                 }
             }
@@ -100,9 +113,15 @@ public static class OutputSheetPlanBuilder
         var result = sql;
         foreach (var insertion in insertions.OrderByDescending(item => item.Key))
         {
-            result = result.Insert(insertion.Key, insertion.Value);
+            result = result.Insert(insertion.Key, insertion.Value.Prefix);
         }
-        return result;
+        return new QualificationResult(
+            result,
+            insertions
+                .OrderBy(item => item.Value.Qualification.QueryLine)
+                .ThenBy(item => item.Value.Qualification.Order)
+                .Select(item => item.Value.Qualification)
+                .ToArray());
     }
 
     /// <summary>
@@ -3420,6 +3439,14 @@ public static class OutputSheetPlanBuilder
         string Name,
         IReadOnlyList<string> SourceTexts,
         Regex ParenthesizedNamePattern);
+
+    private sealed record QualificationInsertion(
+        string Prefix,
+        OutputReplacementQualification Qualification);
+
+    private sealed record QualificationResult(
+        string Sql,
+        IReadOnlyList<OutputReplacementQualification> Replacements);
 
     /// <summary>
     /// SQL断片に含まれるSELECT本体を列挙
