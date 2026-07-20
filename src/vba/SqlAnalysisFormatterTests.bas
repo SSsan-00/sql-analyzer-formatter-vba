@@ -14,6 +14,7 @@ Public Sub RunAllSqlAnalysisFormatterTests(Optional ByVal showMessage As Boolean
     On Error GoTo TestFail
 
     SetupWorkbook_CreatesOutputSheet
+    SetupWorkbook_TracksMissingNameFillColor
     CopyOutput_CopiesRenderedRange
     AnalyzeQueries_ConvertsCrudFixtures
     AnalyzeQueries_ConvertsTsqlFunctionFixtures
@@ -463,6 +464,41 @@ Public Sub SetupWorkbook_CreatesOutputSheet()
     AssertOutputSheetGridlinesHidden
     AssertOutputSheetFont
     AssertOutputTextFittingDisabled wsOutput
+End Sub
+
+'@TestMethod("SetupWorkbook")
+' 変換定義A～D列の和名未取得表示がセル値の変更へ追従することを確認
+Public Sub SetupWorkbook_TracksMissingNameFillColor()
+    Dim wsRef As Worksheet
+    Dim columnNumber As Long
+    Dim missingName As String
+
+    SetupWorkbook
+    Set wsRef = ThisWorkbook.Worksheets(ReferenceSheetName())
+    missingName = "(" & W(&H548C, &H540D, &H672A, &H53D6, &H5F97) & ")"
+    wsRef.Range("A2:D3").ClearContents
+
+    For columnNumber = 1 To 4
+        wsRef.Cells(2, columnNumber).Value = missingName
+        wsRef.Cells(3, columnNumber).Value = "defined"
+    Next columnNumber
+    Application.Calculate
+
+    For columnNumber = 1 To 4
+        AssertCellDisplayFillColor _
+            wsRef.Cells(2, columnNumber), RGB(252, 228, 214)
+        AssertCellHasNoDisplayFill wsRef.Cells(3, columnNumber)
+        wsRef.Cells(2, columnNumber).Value = "defined"
+        wsRef.Cells(3, columnNumber).Value = missingName
+    Next columnNumber
+    Application.Calculate
+
+    For columnNumber = 1 To 4
+        AssertCellHasNoDisplayFill wsRef.Cells(2, columnNumber)
+        AssertCellDisplayFillColor _
+            wsRef.Cells(3, columnNumber), RGB(252, 228, 214)
+    Next columnNumber
+    wsRef.Range("A2:D3").ClearContents
 End Sub
 
 '@TestMethod("CopyOutput")
@@ -1963,6 +1999,24 @@ Private Sub AssertCellValue(ByVal cell As Range, ByVal expected As String)
     If actual <> expected Then
         Fail cell.Worksheet.Name & "!" & cell.Address(False, False) & _
             " expected=[" & expected & "] actual=[" & actual & "]"
+    End If
+End Sub
+
+' 条件付き書式を反映したセルの塗りつぶし色を検証
+Private Sub AssertCellDisplayFillColor(ByVal cell As Range, ByVal expectedColor As Long)
+    If CLng(cell.DisplayFormat.Interior.Color) <> expectedColor Then
+        Fail cell.Worksheet.Name & "!" & cell.Address(False, False) & _
+            " fill expected=[" & CStr(expectedColor) & "] actual=[" & _
+            CStr(cell.DisplayFormat.Interior.Color) & "]"
+    End If
+End Sub
+
+' 条件付き書式を反映したセルに塗りつぶしがないことを検証
+Private Sub AssertCellHasNoDisplayFill(ByVal cell As Range)
+    If CLng(cell.DisplayFormat.Interior.Pattern) <> xlPatternNone Then
+        Fail cell.Worksheet.Name & "!" & cell.Address(False, False) & _
+            " fill pattern expected=[none] actual=[" & _
+            CStr(cell.DisplayFormat.Interior.Pattern) & "]"
     End If
 End Sub
 

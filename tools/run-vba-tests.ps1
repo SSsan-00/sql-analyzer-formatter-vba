@@ -68,6 +68,7 @@ try {
     Release-ComObject $importedComponent
     $testMacros = @(
         'SetupWorkbook_CreatesOutputSheet',
+        'SetupWorkbook_TracksMissingNameFillColor',
         'CopyOutput_CopiesRenderedRange',
         'AnalyzeQueries_ConvertsCrudFixtures',
         'AnalyzeQueries_ConvertsTsqlFunctionFixtures',

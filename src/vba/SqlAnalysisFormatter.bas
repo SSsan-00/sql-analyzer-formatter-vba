@@ -17,6 +17,7 @@ Private Const OUTPUT_LAST_COLUMN As Long = 90
 Private Const OUTPUT_COLUMN_WIDTH As Double = 1.14
 Private Const OUTPUT_ROW_HEIGHT As Double = 13.5
 Private Const OUTPUT_FILL_COLOR As Long = &HEFCEF2
+Private Const MISSING_NAME_FILL_COLOR As Long = &HD6E4FC
 
 ' ブックのシート名、見出し、操作ボタンを初期化
 Public Sub SetupWorkbook()
@@ -29,6 +30,7 @@ Public Sub SetupWorkbook()
     Set wsOutput = ResolveOrCreateSheet(OutputSheetName(), OutputSheetName(), 3)
 
     RestoreHeaders wsRef, wsSql
+    ApplyMissingNameConditionalFormatting wsRef
     ApplyOutputSheetLayout wsOutput
     InstallButtons wsSql
     InstallOutputButton wsOutput
@@ -648,6 +650,36 @@ Private Sub ApplyReferenceHeader(ByVal ws As Worksheet)
     ws.Cells(1, COL_FIELD_NAME).Value = FieldNameHeader()
     ws.Rows(1).Font.Bold = True
     ws.Columns("A:D").AutoFit
+End Sub
+
+' 変換定義A～D列の和名未取得表示を値変更へ追従させる
+Private Sub ApplyMissingNameConditionalFormatting(ByVal ws As Worksheet)
+    Dim targetRange As Range
+    Dim currentDataRange As Range
+    Dim missingNameCondition As FormatCondition
+    Dim missingName As String
+    Dim formulaText As String
+    Dim lastRow As Long
+
+    missingName = "(" & MissingNameText() & ")"
+    lastRow = MaxLong(LastUsedRow(ws), 2)
+    Set currentDataRange = ws.Range( _
+        ws.Cells(2, COL_TABLE_ID), _
+        ws.Cells(lastRow, COL_FIELD_NAME))
+    currentDataRange.Interior.Pattern = xlPatternNone
+
+    Set targetRange = ws.Range( _
+        ws.Cells(2, COL_TABLE_ID), _
+        ws.Cells(ws.Rows.Count, COL_FIELD_NAME))
+    targetRange.FormatConditions.Delete
+    formulaText = "=" & targetRange.Cells(1, 1).Address(False, False) & _
+        "=""" & missingName & """"
+    Set missingNameCondition = targetRange.FormatConditions.Add( _
+        Type:=xlExpression, _
+        Formula1:=formulaText)
+    missingNameCondition.Interior.Pattern = xlSolid
+    missingNameCondition.Interior.Color = MISSING_NAME_FILL_COLOR
+    missingNameCondition.StopIfTrue = True
 End Sub
 
 ' SQL解析シートの見出しと列幅を設定
