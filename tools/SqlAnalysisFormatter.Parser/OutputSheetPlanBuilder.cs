@@ -24,23 +24,143 @@ public static class OutputSheetPlanBuilder
         ArgumentNullException.ThrowIfNull(sql);
         ArgumentNullException.ThrowIfNull(mappings);
 
-        var plan = BuildCore(sql, mappings);
+        var script = ParseScript(sql, out var errors);
+        if (errors.Count > 0 || script is null)
+        {
+            var fallback = CreateFallback(sql, BuildParseErrorReason(errors));
+            return ParserFieldIdentifierRestorer.Restore(fallback, mappings);
+        }
+
+        var qualifiedSql = QualifyUnqualifiedSelectColumns(sql, script, mappings);
+        if (!string.Equals(qualifiedSql, sql, StringComparison.Ordinal))
+        {
+            script = ParseScript(qualifiedSql, out errors);
+            if (errors.Count > 0 || script is null)
+            {
+                var fallback = CreateFallback(qualifiedSql, BuildParseErrorReason(errors));
+                return ParserFieldIdentifierRestorer.Restore(fallback, mappings);
+            }
+        }
+
+        var plan = BuildCore(qualifiedSql, script, mappings);
         return ParserFieldIdentifierRestorer.Restore(plan, mappings);
+    }
+
+    /// <summary>
+    /// SQLをScriptDomで解析
+    /// </summary>
+    private static TSqlScript? ParseScript(string sql, out IList<ParseError> errors)
+    {
+        var parser = new TSql160Parser(initialQuotedIdentifiers: false);
+        using var reader = new StringReader(sql);
+        return parser.Parse(reader, out errors) as TSqlScript;
+    }
+
+    /// <summary>
+    /// SELECT式内の未修飾列を、変換定義から所属先が一意な場合だけSQL上のテーブル別名で修飾
+    /// </summary>
+    private static string QualifyUnqualifiedSelectColumns(
+        string sql,
+        TSqlScript script,
+        IReadOnlyList<MappingDefinition> mappings)
+    {
+        if (mappings.Count == 0)
+        {
+            return sql;
+        }
+
+        var insertions = new Dictionary<int, string>();
+        foreach (var query in QuerySpecificationCollector.Collect(script))
+        {
+            var namedTables = query.FromClause?.TableReferences
+                .SelectMany(EnumerateNamedTables)
+                .ToArray() ?? [];
+            if (namedTables.Length == 0)
+            {
+                continue;
+            }
+
+            foreach (var scalar in query.SelectElements.OfType<SelectScalarExpression>())
+            {
+                foreach (var column in ColumnReferenceCollector.Collect(scalar.Expression))
+                {
+                    var qualifier = ResolveUniqueColumnQualifier(
+                        sql,
+                        column,
+                        namedTables,
+                        mappings);
+                    if (qualifier is not null)
+                    {
+                        insertions.TryAdd(column.StartOffset, qualifier + ".");
+                    }
+                }
+            }
+        }
+
+        var result = sql;
+        foreach (var insertion in insertions.OrderByDescending(item => item.Key))
+        {
+            result = result.Insert(insertion.Key, insertion.Value);
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// 未修飾列に対応するFROMテーブルが変換定義上1つだけなら表示用修飾子を返す
+    /// </summary>
+    private static string? ResolveUniqueColumnQualifier(
+        string sql,
+        ColumnReferenceExpression column,
+        IReadOnlyList<NamedTableReference> namedTables,
+        IReadOnlyList<MappingDefinition> mappings)
+    {
+        var identifiers = column.MultiPartIdentifier?.Identifiers;
+        if (identifiers is null || identifiers.Count != 1)
+        {
+            return null;
+        }
+
+        var fieldId = identifiers[0].Value;
+        var candidates = namedTables
+            .Where(table => mappings.Any(mapping =>
+                MappingFieldMatches(mapping, fieldId) &&
+                MappingBelongsToTable(mapping, table)))
+            .DistinctBy(
+                table => table.Alias?.Value ?? table.SchemaObject.BaseIdentifier.Value,
+                StringComparer.OrdinalIgnoreCase)
+            .Take(2)
+            .ToArray();
+        if (candidates.Length != 1)
+        {
+            return null;
+        }
+
+        var identifier = candidates[0].Alias ?? candidates[0].SchemaObject.BaseIdentifier;
+        return FragmentText(sql, identifier);
+    }
+
+    /// <summary>
+    /// 変換定義の物理名、和名、parser用IDのいずれかが列IDと一致するか判定
+    /// </summary>
+    private static bool MappingFieldMatches(MappingDefinition mapping, string fieldId)
+    {
+        return string.Equals(mapping.FieldId, fieldId, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(mapping.FieldName, fieldId, StringComparison.OrdinalIgnoreCase) ||
+            (mapping.ParserFieldId.Length > 0 &&
+                string.Equals(
+                    mapping.ParserFieldId,
+                    fieldId,
+                    StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>
     /// SQLを解析して復元前の描画計画を作成
     /// </summary>
-    private static OutputSheetPlan BuildCore(string sql, IReadOnlyList<MappingDefinition> mappings)
+    private static OutputSheetPlan BuildCore(
+        string sql,
+        TSqlScript script,
+        IReadOnlyList<MappingDefinition> mappings)
     {
-        var parser = new TSql160Parser(initialQuotedIdentifiers: false);
-        using var reader = new StringReader(sql);
-        var fragment = parser.Parse(reader, out var errors);
-        if (errors.Count > 0 || fragment is not TSqlScript script)
-        {
-            return CreateFallback(sql, BuildParseErrorReason(errors));
-        }
-
         var statement = script.Batches.FirstOrDefault()?.Statements.FirstOrDefault();
         try
         {
@@ -3252,6 +3372,33 @@ public static class OutputSheetPlanBuilder
         string Name,
         IReadOnlyList<string> SourceTexts,
         Regex ParenthesizedNamePattern);
+
+    /// <summary>
+    /// SQL断片に含まれるSELECT本体を列挙
+    /// </summary>
+    private sealed class QuerySpecificationCollector : TSqlFragmentVisitor
+    {
+        private readonly List<QuerySpecification> _queries = [];
+
+        /// <summary>
+        /// SQL断片内のSELECT本体を取得
+        /// </summary>
+        public static IReadOnlyList<QuerySpecification> Collect(TSqlFragment fragment)
+        {
+            var collector = new QuerySpecificationCollector();
+            fragment.Accept(collector);
+            return collector._queries;
+        }
+
+        /// <summary>
+        /// SELECT本体を追加して、ネストしたSELECTも引き続き探索
+        /// </summary>
+        public override void ExplicitVisit(QuerySpecification node)
+        {
+            _queries.Add(node);
+            base.ExplicitVisit(node);
+        }
+    }
 
     /// <summary>
     /// 式内の列参照を出現順に収集し、サブクエリ内部は別フレームへ委ねる

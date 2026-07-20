@@ -23,6 +23,7 @@ Public Sub RunAllSqlAnalysisFormatterTests(Optional ByVal showMessage As Boolean
     AnalyzeQueries_RendersDeeplyNestedCaseConditions
     AnalyzeQueries_NormalizesInvisibleOutputWhitespace
     AnalyzeQueries_ResolvesQualifiedStarAndMatchingAlias
+    AnalyzeQueries_QualifiesUnqualifiedSelectColumns
     AnalyzeQueries_ResolvesMatchingTemporaryTableDefinition
     AnalyzeQueries_PreservesUnmatchedTemporaryTableDefinition
     AnalyzeQueries_SeparatesTransferExpressionsFromColumns
@@ -614,6 +615,34 @@ Public Sub AnalyzeQueries_WritesUnsupportedQueryAsIs()
         AssertCellValue wsOutput.Cells(4, 1), ExpectedParserNotFoundReason() & _
             ExpectedFallbackLocation(1, 2)
     End If
+End Sub
+
+'@TestMethod("AnalyzeQueries")
+' 未修飾取得列を変換定義から一意に決まるSQL別名で修飾することを確認
+Public Sub AnalyzeQueries_QualifiesUnqualifiedSelectColumns()
+    Dim wsRef As Worksheet
+    Dim wsSql As Worksheet
+    Dim wsOutput As Worksheet
+
+    If Not ExternalParserConfigured() Then Exit Sub
+
+    SetupWorkbook
+    Set wsRef = ThisWorkbook.Worksheets(ReferenceSheetName())
+    Set wsSql = ThisWorkbook.Worksheets(SqlSheetName())
+    Set wsOutput = ThisWorkbook.Worksheets(OutputSheetName())
+
+    wsRef.Range("A2:D200").ClearContents
+    wsSql.Range("A2:Z200").ClearContents
+    wsOutput.Cells.ClearContents
+    PutDefinition wsRef, 2, "tb1", "Users", "name", "Name"
+    PutDefinition wsRef, 3, "tb2", "Location", "address", "Address"
+    wsSql.Cells(2, COL_SQL).Value = _
+        "SELECT name, address FROM users tb1 LEFT JOIN location tb2 ON tb1.id = tb2.id"
+
+    AnalyzeQueries False
+
+    AssertCellValue wsOutput.Cells(3, 17), "tb1.name"
+    AssertCellValue wsOutput.Cells(4, 17), "tb2.address"
 End Sub
 
 '@TestMethod("ClearData")

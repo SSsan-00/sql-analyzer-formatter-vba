@@ -70,6 +70,7 @@ try {
         'AnalyzeQueries_RendersDeeplyNestedCaseConditions',
         'AnalyzeQueries_NormalizesInvisibleOutputWhitespace',
         'AnalyzeQueries_ResolvesQualifiedStarAndMatchingAlias',
+        'AnalyzeQueries_QualifiesUnqualifiedSelectColumns',
         'AnalyzeQueries_ResolvesMatchingTemporaryTableDefinition',
         'AnalyzeQueries_PreservesUnmatchedTemporaryTableDefinition',
         'AnalyzeQueries_SeparatesTransferExpressionsFromColumns',

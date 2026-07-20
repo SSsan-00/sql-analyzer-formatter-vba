@@ -93,6 +93,81 @@ public sealed class OutputSheetPlanBuilderTests
     }
 
     /// <summary>
+    /// JOIN内の未修飾取得列を変換定義から一意に対応するSQL別名で修飾することを確認
+    /// </summary>
+    [TestMethod]
+    public void Build_QualifiesUnqualifiedSelectColumnsUsingUniqueMappings()
+    {
+        const string sql = """
+            SELECT name, address
+            FROM users AS tb1
+            LEFT JOIN location AS tb2 ON tb1.id = tb2.id
+            """;
+        MappingDefinition[] mappings =
+        [
+            new("tb1", "ユーザー", "name", "名前"),
+            new("tb2", "所在地", "address", "住所")
+        ];
+
+        var plan = OutputSheetPlanBuilder.Build(sql, mappings);
+
+        Assert.IsFalse(plan.IsFallback);
+        Assert.AreEqual("tb1.name", CellValue(plan, 3, 17));
+        Assert.AreEqual("tb2.address", CellValue(plan, 4, 17));
+    }
+
+    /// <summary>
+    /// 未修飾列が複数テーブルの変換定義に一致する場合は推測で修飾しないことを確認
+    /// </summary>
+    [TestMethod]
+    public void Build_DoesNotQualifyAmbiguousUnqualifiedSelectColumn()
+    {
+        const string sql = """
+            SELECT name
+            FROM users AS tb1
+            LEFT JOIN archived_users AS tb2 ON tb1.id = tb2.id
+            """;
+        MappingDefinition[] mappings =
+        [
+            new("tb1", "ユーザー", "name", "名前"),
+            new("tb2", "退会ユーザー", "name", "名前")
+        ];
+
+        var plan = OutputSheetPlanBuilder.Build(sql, mappings);
+
+        Assert.IsFalse(plan.IsFallback);
+        Assert.AreEqual("name", CellValue(plan, 3, 17));
+    }
+
+    /// <summary>
+    /// 式内の未修飾列も一意な変換定義で修飾し、INSERT SELECTの移送元へ反映することを確認
+    /// </summary>
+    [TestMethod]
+    public void Build_QualifiesUnqualifiedColumnInsideInsertSelectExpression()
+    {
+        const string sql = """
+            INSERT INTO user_snapshots(display_name)
+            SELECT TRIM(name)
+            FROM users AS tb1
+            """;
+        MappingDefinition[] mappings =
+        [
+            new("user_snapshots", "ユーザースナップショット", "", ""),
+            new("tb1", "ユーザー", "name", "名前")
+        ];
+
+        var plan = OutputSheetPlanBuilder.Build(sql, mappings);
+
+        Assert.IsFalse(plan.IsFallback);
+        Assert.IsTrue(plan.Cells.Any(cell =>
+            cell.Column == 17 && cell.Value == "TRIM(tb1.name)"));
+        Assert.IsTrue(plan.Cells.Any(cell =>
+            cell.Column == 19 && cell.Value == "tb1.name"));
+        Assert.IsTrue(plan.Cells.Any(cell =>
+            cell.Column == 37 && cell.Value == "TRIM(tb1.name)"));
+    }
+
+    /// <summary>
     /// 単一テーブルでは単独フィールド定義のテーブル和名を参照表示へ使用することを確認
     /// </summary>
     [TestMethod]
