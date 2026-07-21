@@ -2981,8 +2981,8 @@ public static class OutputSheetPlanBuilder
                 cells.Add(new OutputCell(row, 1, "結合条件"));
             }
 
-            var leftTables = EnumerateJoinDisplays(join.FirstTableReference, mappings).ToArray();
-            var rightTables = EnumerateJoinDisplays(join.SecondTableReference, mappings).ToArray();
+            var leftTables = EnumerateJoinTables(join.FirstTableReference, mappings).ToArray();
+            var rightTables = EnumerateJoinTables(join.SecondTableReference, mappings).ToArray();
             if (leftTables.Length == 0 || rightTables.Length == 0)
             {
                 var unsupportedTable = leftTables.Length == 0
@@ -2993,8 +2993,11 @@ public static class OutputSheetPlanBuilder
                     unsupportedTable);
             }
 
-            var leftTable = leftTables[^1];
-            var rightTable = rightTables[0];
+            var referencedTableIds = DirectColumnQualifierCollector
+                .Collect(join.SearchCondition)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var leftTable = BuildJoinSideDisplay(leftTables, referencedTableIds, useLastFallback: true);
+            var rightTable = BuildJoinSideDisplay(rightTables, referencedTableIds, useLastFallback: false);
             var joinText = $"＜{leftTable} {JoinTypeText(join.QualifiedJoinType)} {rightTable}＞";
             cells.Add(new OutputCell(row, 17, joinText));
             row++;
@@ -3026,32 +3029,59 @@ public static class OutputSheetPlanBuilder
     /// <summary>
     /// JOIN片側の実テーブルと派生テーブル名を左から列挙
     /// </summary>
-    private static IEnumerable<string> EnumerateJoinDisplays(
+    private static IEnumerable<JoinTableDisplay> EnumerateJoinTables(
         TableReference table,
         IReadOnlyList<MappingDefinition> mappings)
     {
         switch (table)
         {
             case NamedTableReference named:
-                yield return BuildTableDisplay(named, mappings);
+                yield return new JoinTableDisplay(
+                    named.Alias?.Value ?? named.SchemaObject.BaseIdentifier.Value,
+                    BuildTableDisplay(named, mappings));
                 break;
             case QueryDerivedTable queryDerived:
-                yield return queryDerived.Alias?.Value ?? MissingName;
+                var queryDerivedId = queryDerived.Alias?.Value ?? MissingName;
+                yield return new JoinTableDisplay(queryDerivedId, queryDerivedId);
                 break;
             case InlineDerivedTable inlineDerived:
-                yield return $"派生テーブル[{inlineDerived.Alias?.Value ?? MissingName}]";
+                var inlineDerivedId = inlineDerived.Alias?.Value ?? MissingName;
+                yield return new JoinTableDisplay(
+                    inlineDerivedId,
+                    $"派生テーブル[{inlineDerivedId}]");
                 break;
             case QualifiedJoin join:
-                foreach (var display in EnumerateJoinDisplays(join.FirstTableReference, mappings))
+                foreach (var display in EnumerateJoinTables(join.FirstTableReference, mappings))
                 {
                     yield return display;
                 }
-                foreach (var display in EnumerateJoinDisplays(join.SecondTableReference, mappings))
+                foreach (var display in EnumerateJoinTables(join.SecondTableReference, mappings))
                 {
                     yield return display;
                 }
                 break;
         }
+    }
+
+    /// <summary>
+    /// ON条件が参照するJOIN片側のテーブルを列挙し、解決できない場合は構造上の隣接テーブルへ戻す
+    /// </summary>
+    private static string BuildJoinSideDisplay(
+        IReadOnlyList<JoinTableDisplay> tables,
+        IReadOnlySet<string> referencedTableIds,
+        bool useLastFallback)
+    {
+        var referencedDisplays = tables
+            .Where(table => referencedTableIds.Contains(table.Identifier))
+            .Select(table => table.Display)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        if (referencedDisplays.Length > 0)
+        {
+            return string.Join("、", referencedDisplays);
+        }
+
+        return useLastFallback ? tables[^1].Display : tables[0].Display;
     }
 
     /// <summary>
@@ -4123,12 +4153,12 @@ public static class OutputSheetPlanBuilder
         private readonly HashSet<string> _seen = new(StringComparer.OrdinalIgnoreCase);
 
         /// <summary>
-        /// クエリ直下の列修飾子を収集
+        /// SQL断片直下の列修飾子を収集
         /// </summary>
-        public static IReadOnlyList<string> Collect(QuerySpecification query)
+        public static IReadOnlyList<string> Collect(TSqlFragment fragment)
         {
             var collector = new DirectColumnQualifierCollector();
-            query.Accept(collector);
+            fragment.Accept(collector);
             return collector._identifiers;
         }
 
@@ -4217,6 +4247,8 @@ public static class OutputSheetPlanBuilder
         IReadOnlyList<ScalarExpression>? DirectCases = null);
 
     private sealed record ConditionPart(string Connector, BooleanExpression Expression);
+
+    private sealed record JoinTableDisplay(string Identifier, string Display);
 
     private sealed record CaseConditionPart(
         string Connector,

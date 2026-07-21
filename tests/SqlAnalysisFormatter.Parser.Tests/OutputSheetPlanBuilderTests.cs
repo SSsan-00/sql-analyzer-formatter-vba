@@ -917,6 +917,72 @@ public sealed class OutputSheetPlanBuilderTests
     }
 
     /// <summary>
+    /// 連鎖JOINの見出しには各ON条件が実際に参照するテーブルを表示することを確認
+    /// </summary>
+    [TestMethod]
+    public void Build_UsesReferencedTablesInChainedJoinHeader()
+    {
+        const string sql = """
+            SELECT
+                tb1.アカウントID
+            FROM
+                accounts AS tb1
+                INNER JOIN profiles AS tb2
+                    ON tb1.アカウントID = tb2.アカウントID
+                LEFT JOIN orders AS tb3
+                    ON tb1.アカウントID = tb3.注文アカウントID
+            """;
+        MappingDefinition[] mappings =
+        [
+            new("tb1", "アカウント", "", ""),
+            new("tb2", "プロフィール", "", ""),
+            new("tb3", "注文", "", "")
+        ];
+
+        var plan = OutputSheetPlanBuilder.Build(sql, mappings);
+
+        Assert.IsFalse(plan.IsFallback);
+        Assert.AreEqual(
+            "＜アカウント[tb1] INNER JOIN プロフィール[tb2]＞",
+            CellValue(plan, 4, 17));
+        Assert.AreEqual(
+            "＜アカウント[tb1] LEFT JOIN 注文[tb3]＞",
+            CellValue(plan, 6, 17));
+    }
+
+    /// <summary>
+    /// ON条件がJOIN左側の複数テーブルを参照する場合はすべて見出しへ表示することを確認
+    /// </summary>
+    [TestMethod]
+    public void Build_ListsAllReferencedTablesInJoinHeader()
+    {
+        const string sql = """
+            SELECT
+                tb1.アカウントID
+            FROM
+                accounts AS tb1
+                INNER JOIN profiles AS tb2
+                    ON tb1.アカウントID = tb2.アカウントID
+                LEFT JOIN orders AS tb3
+                    ON tb1.テナントID = tb3.テナントID
+                    AND tb2.地域ID = tb3.地域ID
+            """;
+        MappingDefinition[] mappings =
+        [
+            new("tb1", "アカウント", "", ""),
+            new("tb2", "プロフィール", "", ""),
+            new("tb3", "注文", "", "")
+        ];
+
+        var plan = OutputSheetPlanBuilder.Build(sql, mappings);
+
+        Assert.IsFalse(plan.IsFallback);
+        Assert.AreEqual(
+            "＜アカウント[tb1]、プロフィール[tb2] LEFT JOIN 注文[tb3]＞",
+            CellValue(plan, 6, 17));
+    }
+
+    /// <summary>
     /// CASE分岐を列エイリアスの下へ展開することを確認
     /// </summary>
     [TestMethod]
