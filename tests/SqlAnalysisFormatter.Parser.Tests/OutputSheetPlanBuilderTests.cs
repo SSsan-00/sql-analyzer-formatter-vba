@@ -863,6 +863,60 @@ public sealed class OutputSheetPlanBuilderTests
     }
 
     /// <summary>
+    /// 括弧でネストしたJOIN条件を検索条件と同じ階層配置へ展開することを確認
+    /// </summary>
+    [TestMethod]
+    public void Build_ExpandsNestedJoinConditionLikeSearchCondition()
+    {
+        const string sql = """
+            SELECT
+                tb1.ユーザーID
+            FROM
+                users AS tb1
+                LEFT JOIN orders AS tb2
+                    ON (
+                        tb1.ユーザーID = tb2.注文ユーザーID
+                        AND (tb1.テナントID = tb2.テナントID OR tb2.テナントID IS NULL)
+                    )
+                    AND NOT (
+                        tb2.削除日時 IS NOT NULL
+                        OR tb2.状態 = @status
+                    )
+            """;
+        MappingDefinition[] mappings =
+        [
+            new("tb1", "ユーザー", "", ""),
+            new("tb2", "注文", "", "")
+        ];
+
+        var plan = OutputSheetPlanBuilder.Build(sql, mappings);
+
+        Assert.IsFalse(plan.IsFallback);
+        Assert.AreEqual(10, plan.RowCount);
+        AssertCells(
+            plan,
+            (1, 1, "＜DB入出力項目定義＞"),
+            (2, 1, "参照テーブル: ユーザー[tb1]、注文[tb2]"),
+            (3, 1, "取得項目"),
+            (3, 7, "取得項目1"),
+            (3, 15, ":"),
+            (3, 17, "tb1.ユーザーID"),
+            (4, 1, "結合条件"),
+            (4, 17, "＜ユーザー[tb1] LEFT JOIN 注文[tb2]＞"),
+            (5, 7, "("),
+            (5, 17, "tb1.ユーザーID = tb2.注文ユーザーID"),
+            (6, 15, "AND"),
+            (6, 17, "(tb1.テナントID = tb2.テナントID OR tb2.テナントID IS NULL)"),
+            (7, 7, ")"),
+            (8, 7, "AND NOT"),
+            (8, 15, "("),
+            (8, 17, "tb2.削除日時 IS NOT NULL"),
+            (9, 15, "OR"),
+            (9, 17, "tb2.状態 = @status"),
+            (10, 7, ")"));
+    }
+
+    /// <summary>
     /// CASE分岐を列エイリアスの下へ展開することを確認
     /// </summary>
     [TestMethod]

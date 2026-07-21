@@ -2753,6 +2753,19 @@ public static class OutputSheetPlanBuilder
     {
         var startRow = row;
         cells.Add(new OutputCell(row, 1, label));
+        WriteConditionRows(cells, sql, condition, ref row);
+        sections.Add(new OutputSection(OutputSectionKind.Standard, startRow, row - 1));
+    }
+
+    /// <summary>
+    /// 論理条件を括弧構造に応じた共通配置で行へ展開
+    /// </summary>
+    private static void WriteConditionRows(
+        ICollection<OutputCell> cells,
+        string sql,
+        BooleanExpression condition,
+        ref int row)
+    {
         var rootLayout = new ConditionLayout(7, 17, 17, 15);
         foreach (var part in FlattenBooleanExpression(condition))
         {
@@ -2765,7 +2778,6 @@ public static class OutputSheetPlanBuilder
                 expandParentheses: true,
                 row);
         }
-        sections.Add(new OutputSection(OutputSectionKind.Standard, startRow, row - 1));
     }
 
     /// <summary>
@@ -2987,30 +2999,7 @@ public static class OutputSheetPlanBuilder
             cells.Add(new OutputCell(row, 17, joinText));
             row++;
 
-            var parts = FlattenBooleanExpression(join.SearchCondition);
-            for (var conditionIndex = 0; conditionIndex < parts.Count; conditionIndex++)
-            {
-                if (conditionIndex > 0)
-                {
-                    cells.Add(new OutputCell(row, 7, parts[conditionIndex].Connector));
-                }
-
-                if (TryWriteConditionCases(
-                    cells,
-                    sql,
-                    parts[conditionIndex].Expression,
-                    17,
-                    row,
-                    out var consumedRows))
-                {
-                    row += consumedRows;
-                }
-                else
-                {
-                    cells.Add(new OutputCell(row, 17, DisplayText(sql, parts[conditionIndex].Expression)));
-                    row++;
-                }
-            }
+            WriteConditionRows(cells, sql, join.SearchCondition, ref row);
         }
 
         sections.Add(new OutputSection(OutputSectionKind.Standard, startRow, row - 1));
